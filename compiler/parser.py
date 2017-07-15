@@ -8,8 +8,8 @@ tokens = lexer.tokens
 
 
 def p_program(p):
-    'program : PROGRAM expr'
-    p[0] = SchProgramNode(p[2])
+    'program : LPAREN PROGRAM expr RPAREN'
+    p[0] = SchProgramNode(p[3])
 
 
 def p_expr_int(p):
@@ -73,16 +73,17 @@ def p_empty(p):
 
 
 def p_error(p):
-    raise RuntimeError('Error syntax')
+    raise RuntimeError('Error syntax, p={}'.format(p))
 
 if __name__ == '__main__':
     parser = yacc.yacc()
     test_data = '''
-    ; a test scheme program using R1 grammar
     (program
-        (let  ([foo 36])
-            (+ foo 6)
+        (let  ([foo 43] [bar (- 1)])
+            (+ foo bar)
         )
     )
     '''
-    # result = parser.parse(test_data)
+    sc_lexer = lexer.SchemeLexer()
+    result = parser.parse(test_data, lexer=sc_lexer)
+    print(result.source_code())
