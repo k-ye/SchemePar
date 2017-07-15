@@ -2,3 +2,5 @@
 *.pyc
 *.o
 *.s
+*.out
+parsetab*
