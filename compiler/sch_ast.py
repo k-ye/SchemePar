@@ -58,13 +58,13 @@ class SchLetNode(SchExprNode):
         self._body = body
 
 
-class SchProgram(SchNode):
+class SchProgramNode(SchNode):
 
     def __init__(self, expr):
         '''
         expr: An SchExprNode
         '''
-        super(self, SchProgram).__init__()
+        super(self, SchProgramNode).__init__()
         self._expr = expr
 
     @property
