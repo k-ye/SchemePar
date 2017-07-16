@@ -35,7 +35,6 @@ class LexingError(Exception):
 
 
 def SchemeLexer():
-    # Grammar version: R1
     t_ADD = r'\+'
     t_MINUS = r'-'
     t_LPAREN = r'\('
