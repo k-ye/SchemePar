@@ -65,6 +65,7 @@ class SchApplyNode(SchExprNode):
         '''
         super(SchApplyNode, self).__init__()
         self._method = method
+        # TODO: rename to *operand_list
         self._arg_list = arg_list
 
     @property
