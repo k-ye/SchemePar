@@ -78,6 +78,12 @@ def Uniquify(ast):
     return _Uniquify(ast, env)
 
 
+def Flatten(sch_ast):
+    '''
+    Flatten the Scheme ast to IR ast. This should run after Uniquify
+    |ast|: An SchNode. In production this should be an SchProgramNode.
+    '''
+
 def Compile(ast):
     ast = Uniquify(ast)
     return ast
