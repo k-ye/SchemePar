@@ -1,7 +1,7 @@
 from __future__ import print_function
 
-from scoped_env import ScopedEnv, ScopedEnvNode
-from ir_ast import *
+from ast.scoped_env import ScopedEnv, ScopedEnvNode
+from ast.ir_ast import *
 
 
 class CompilingError(Exception):

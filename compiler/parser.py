@@ -2,7 +2,7 @@ from __future__ import print_function
 
 import ply.yacc as yacc
 import lexer
-from sch_ast import *
+from ast.sch_ast import *
 
 tokens = lexer.tokens
 
