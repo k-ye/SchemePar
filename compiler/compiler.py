@@ -112,12 +112,15 @@ class _FlattenBuilder(object):
 
     def __init__(self):
         self._var_dict = {}
+        # this is to order the variable list
+        self._var_name_list = []
         self._next_tmp = 0
         self._stmt_list = []
 
     @property
     def var_list(self):
-        return self._var_dict.values()
+        result = [self._var_dict[name] for name in self._var_name_list]
+        return result
 
     @property
     def stmt_list(self):
@@ -127,6 +130,7 @@ class _FlattenBuilder(object):
         assert not self.ContainsVar(var)
         var_node = IrVarNode(var)
         self._var_dict[var] = var_node
+        self._var_name_list.append(var)
         return var_node
 
     def AllocateTmpVar(self):
@@ -212,6 +216,10 @@ def Flatten(sch_ast):
     '''
     return _Flatten(sch_ast, _FlattenBuilder())
 
+
+'''Select-instruction pass
+
+'''
 
 '''Compile
 Calls all the passes on the Scheme AST.

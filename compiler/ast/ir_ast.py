@@ -65,7 +65,7 @@ class IrAssignNode(IrStmtNode):
         self.var._source_code(builder)
         self.expr._source_code(builder)
         builder.Append(')')
-        
+
 
 class IrReturnNode(IrStmtNode):
 

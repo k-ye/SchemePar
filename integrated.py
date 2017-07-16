@@ -32,7 +32,7 @@ if __name__ == '__main__':
     parser = SchemeParser()
     ast = parser.parse(test_data, lexer=lexer)
     assert ast.type == 'program'
-    
+
     sch_ast = Uniquify(ast)
     print('Souce code after uniquify:')
     print(sch_ast.source_code())

@@ -68,3 +68,44 @@ arg
 var : VAR
 
 ```
+
+## X86 Assembly
+
+- version: X0
+- There is no lexing/parsing for X86 Assembly. We generate its AST from IR's AST directly.
+- BNF
+
+```
+x86 : ( PROGRAM INT maybe_var_list instr_list )
+
+maybe_var_list  # only used internally
+    : empty
+    | _var maybe_var_list
+
+instr_list
+    : instr
+    | instr instr_list
+
+instr
+    : ( ADD arg arg )
+    | ( SUB arg arg )
+    | ( NEG arg )
+    | ( MOV arg arg )
+    | ( CALL LABEL )
+    | ( PUSH arg )
+    | ( POP arg )
+    | ( RET )
+
+arg 
+    : INT
+    | REGISTER
+    | deref
+    | _var # only used internally
+
+deref
+    : INT ( REGISTER )
+    : MINUS INT ( REGISTER )
+
+_var : VAR
+
+```
