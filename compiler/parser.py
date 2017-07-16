@@ -65,7 +65,16 @@ def SchemeParser():
     def p_error(p):
         raise ParsingError('Error syntax, p={}'.format(p))
 
-    return yacc.yacc()
+    class ParserImpl(object):
+        def __init__(self, yacc):
+            self._yacc = yacc
+
+        def parse(self, source, lexer):
+            ast = self._yacc.parse(input=source, lexer=lexer)
+            ast = SchProgramNode(ast)
+            return ast
+            
+    return ParserImpl(yacc.yacc())
 
 if __name__ == '__main__':
     test_data = '''

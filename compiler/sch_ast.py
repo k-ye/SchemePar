@@ -152,6 +152,34 @@ class SchLetNode(SchExprNode):
         builder.Append(')')
 
 
+class SchProgramNode(SchNode):
+    '''
+    This wrapper node is still needed at the top level. It's
+    used internally at parsing stage.
+    '''
+    def __init__(self, expr):
+        '''
+        expr: An SchExprNode
+        '''
+        super(SchProgramNode, self).__init__()
+        self._expr = expr
+
+    @property
+    def type(self):
+        return 'program'
+
+    @property
+    def program(self):
+        return self._expr
+
+    @program.setter
+    def program(self, expr):
+        self._expr = expr
+
+    def _source_code(self, builder):
+        self._expr._source_code(builder)
+
+
 class _SourceCodeBuilder(object):
 
     def __init__(self):
