@@ -12,9 +12,10 @@ class ParsingError(Exception):
 
 
 def SchemeParser():
-    def p_program(p):
-        'program : LPAREN PROGRAM expr RPAREN'
-        p[0] = SchProgramNode(p[3])
+    def p_expr_int_var(p):
+        '''expr : expr_int
+                | expr_var'''
+        p[0] = p[1]
 
     def p_expr_int(p):
         'expr_int : INT'
@@ -23,11 +24,6 @@ def SchemeParser():
     def p_expr_var(p):
         'expr_var : VAR'
         p[0] = SchVarNode(p[1])
-
-    def p_expr_int_var(p):
-        '''expr : expr_int
-                | expr_var'''
-        p[0] = p[1]
 
     def p_expr_let(p):
         'expr : LPAREN LET let_var_binds expr RPAREN'
@@ -74,10 +70,8 @@ def SchemeParser():
 if __name__ == '__main__':
     test_data = '''
     ; a test Scheme program using R1 grammar
-    (program
-        (let  ([foo 43] [bar (- 1)])
-            (+ foo bar)
-        )
+    (let ([foo 43] [bar (- 1)])
+        (+ foo bar)
     )
     '''
     lexer = lexer.SchemeLexer()

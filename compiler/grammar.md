@@ -4,7 +4,7 @@
 - BNF (terminal symbols are all CAPITALIZED, while non-terminal symbols are all in lowercase)
 
 ```
-scheme : (PROGRAM expr)
+scheme : expr
 
 expr 
     : expr_int 

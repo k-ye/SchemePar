@@ -152,36 +152,6 @@ class SchLetNode(SchExprNode):
         builder.Append(')')
 
 
-class SchProgramNode(SchNode):
-
-    def __init__(self, expr):
-        '''
-        expr: An SchExprNode
-        '''
-        super(SchProgramNode, self).__init__()
-        self._expr = expr
-
-    @property
-    def type(self):
-        return 'program'
-
-    @property
-    def program(self):
-        return self._expr
-
-    @program.setter
-    def program(self, expr):
-        self._expr = expr
-
-    def _source_code(self, builder):
-        builder.Append('(program')
-        with builder.Indent():
-            builder.NewLine()
-            self._expr._source_code(builder)
-        builder.NewLine()
-        builder.Append(')')
-
-
 class _SourceCodeBuilder(object):
 
     def __init__(self):

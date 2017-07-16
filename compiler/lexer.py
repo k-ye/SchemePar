@@ -4,7 +4,6 @@ import ply.lex as lex
 
 keywords = {
     'let': 'LET',
-    'program': 'PROGRAM',
     'read': 'READ',
 }
 
@@ -99,10 +98,8 @@ if __name__ == '__main__':
     #!0xff!!!0_o!^_^aaa!!!#
     #! #! #!!!!#
 
-    (program
-        (let  ([foo 36])
-            (+ foo 6)
-        )
+    (let  ([foo 36])
+        (+ foo 6)
     )
     ; 42
     '''

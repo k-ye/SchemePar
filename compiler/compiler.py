@@ -106,9 +106,7 @@ class _UniquifyScopedEnvNode(ScopedEnvNode):
 
 def _Uniquify(ast, env):
     ast_type = ast.type
-    if ast_type == 'program':
-        ast.program = _Uniquify(ast.program, env)
-    elif ast_type == 'int':
+    if ast_type == 'int':
         pass
     elif ast_type == 'var':
         ast.var = env.Get(ast.var)
