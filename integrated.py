@@ -42,3 +42,5 @@ if __name__ == '__main__':
     print('IR Souce code:')
     print(ir_ast.source_code())
     print('---\n')
+
+    x86_ast = SelectInstruction(ir_ast)

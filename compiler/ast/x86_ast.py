@@ -11,6 +11,9 @@ instr_list
     : instr
     | instr instr_list
 
+# Operand order of binary instruction follows the AT&T standard.
+# INSTR SRC DST
+
 instr
     : ( ADD arg arg )
     | ( SUB arg arg )
@@ -57,17 +60,25 @@ class X86ProgramNode(X86Node):
     def type(self):
         return 'program'
 
+    @property
+    def var_list(self):
+        return self._var_list
+
+    @property
+    def instr_list(self):
+        return self._instr_list
+
 
 class X86InstrNode(X86Node):
 
-    def __init__(self, instr, operand_list):
+    def __init__(self, instr, *operands):
         super(X86InstrNode, self).__init__()
         '''
         instr: a string of the instruction name
         operand_list: a list of X86ArgNode
         '''
         self._instr = instr
-        self._operand_list = operand_list
+        self._operand_list = [o for o in operands]
 
     @property
     def type(self):

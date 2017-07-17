@@ -17,6 +17,14 @@ class IrProgramNode(IrNode):
     def type(self):
         return 'program'
 
+    @property
+    def var_list(self):
+        return self._var_list
+
+    @property
+    def stmt_list(self):
+        return self._stmt_list
+
     def _source_code(self, builder):
         builder.Append('( program')
         with builder.Indent():

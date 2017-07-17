@@ -2,6 +2,8 @@ from __future__ import print_function
 
 from ast.scoped_env import ScopedEnv, ScopedEnvNode
 from ast.ir_ast import *
+from ast.x86_ast import *
+import x86_const as x86c
 
 
 class CompilingError(Exception):
@@ -100,22 +102,19 @@ def Uniquify(ast):
     return _Uniquify(ast, env)
 
 
-''' Flatten pass
-This pass flattens an Scheme AST to an equivalent IR AST
-
-- Scheme version: R1
-- IR version: C0
-'''
-
-
-class _FlattenBuilder(object):
+class _LowLvPassBuilder(object):
+    '''
+    Base class of the low level language, including IR and X86 assembly.
+    '''
 
     def __init__(self):
         self._var_dict = {}
         # this is to order the variable list
         self._var_name_list = []
-        self._next_tmp = 0
         self._stmt_list = []
+
+    def _CreateVar(self, var):
+        raise NotImplementedError("_CreateVar")
 
     @property
     def var_list(self):
@@ -128,15 +127,10 @@ class _FlattenBuilder(object):
 
     def AddVar(self, var):
         assert not self.ContainsVar(var)
-        var_node = IrVarNode(var)
+        var_node = self._CreateVar(var)
         self._var_dict[var] = var_node
         self._var_name_list.append(var)
         return var_node
-
-    def AllocateTmpVar(self):
-        tmp_var = 'tmp_{}'.format(self._next_tmp)
-        self._next_tmp += 1
-        return self.AddVar(tmp_var)
 
     def GetVar(self, var):
         return self._var_dict[var]
@@ -146,6 +140,29 @@ class _FlattenBuilder(object):
 
     def AddStmt(self, stmt):
         self._stmt_list.append(stmt)
+
+
+''' Flatten pass
+This pass flattens an Scheme AST to an equivalent IR AST
+
+- Scheme version: R1
+- IR version: C0
+'''
+
+
+class _FlattenBuilder(_LowLvPassBuilder):
+
+    def __init__(self):
+        super(_FlattenBuilder, self).__init__()
+        self._next_tmp = 0
+
+    def _CreateVar(self, var):
+        return IrVarNode(var)
+
+    def AllocateTmpVar(self):
+        tmp_var = 'tmp_{}'.format(self._next_tmp)
+        self._next_tmp += 1
+        return self.AddVar(tmp_var)
 
 
 def _FlattenSchExpr(sch_ast, builder):
@@ -220,6 +237,110 @@ def Flatten(sch_ast):
 '''Select-instruction pass
 
 '''
+
+
+class _SelectInstructionBuilder(_LowLvPassBuilder):
+
+    def _CreateVar(self, var):
+        return X86VarNode(var)
+
+    def AddInstr(self, instr):
+        assert isinstance(instr, X86InstrNode)
+        super(_SelectInstructionBuilder, self).AddStmt(instr)
+
+    @property
+    def instr_list(self):
+        return self.stmt_list
+
+
+def _GetX86ArgNodeFromIr(ir_arg, builder):
+    assert IsIrArgNode(ir_arg)
+    if ir_arg.type == 'int':
+        return X86IntNode(ir_arg.x)
+    elif ir_arg.type == 'var':
+        return builder.GetVar(ir_arg.var)
+    # impossible to reach here
+    assert False
+
+
+def _SelectInstrForArg(ir_arg, x86_asn_var, builder):
+    assert isinstance(x86_asn_var, X86VarNode), 'x86_asn_var type={}'.format(type(x86_asn_var))
+    if ir_arg.type == 'var':
+        # check that there is no side effect, meaning that assignment like
+        # 'x <- x + 42' cannot exist at this point.
+        assert ir_arg.var != x86_asn_var.var
+
+    x86_arg = _GetX86ArgNodeFromIr(ir_arg, builder)
+    x86_instr = X86InstrNode(x86c.MOVE, x86_arg, x86_asn_var)
+    builder.AddInstr(x86_instr)
+
+
+def _SelectInstrForApply(ir_apply, x86_asn_var, builder):
+    assert isinstance(ir_apply, IrApplyNode) and ir_apply.type == 'apply'
+    assert isinstance(x86_asn_var, X86VarNode)
+
+    method = ir_apply.method
+    ir_operands = ir_apply.arg_list
+
+    if method == 'read':
+        # runtime provides read_int function
+        x86_instr = X86InstrNode(x86c.CALL, 'read_int')
+        builder.AddInstr(x86_instr)
+        x86_instr = X86InstrNode(x86c.MOVE, X86RegNode(x86c.RAX), x86_asn_var)
+        builder.AddInstr(x86_instr)
+    elif method == '-':
+        # TODO: Currently this means negation. Later on subtraction also needs
+        # to be handled
+        _SelectInstrForArg(ir_operands[0], x86_asn_var, builder)
+        x86_instr = X86InstrNode(x86c.NEG, x86_asn_var)
+        builder.AddInstr(x86_instr)
+    elif method == '+':
+        _SelectInstrForArg(ir_operands[0], x86_asn_var, builder)
+        x86_instr = X86InstrNode(
+            x86c.ADD, _GetX86ArgNodeFromIr(ir_operands[1], builder), x86_asn_var)
+        builder.AddInstr(x86_instr)
+    else:
+        raise CompilingError('Unknown method={} in IrApplyNode'.format(method))
+
+
+def _SelectInstrForAssign(ir_asn, builder):
+    x86_asn_var = builder.AddVar(ir_asn.var.var)
+    ir_expr = ir_asn.expr
+    expr_type = ir_expr.type
+
+    if IsIrArgNode(ir_expr):
+        # 'int' or 'var'
+        _SelectInstrForArg(ir_expr, x86_asn_var, builder)
+    elif expr_type == 'apply':
+        _SelectInstrForApply(ir_expr, x86_asn_var, builder)
+    else:
+        raise CompilingError(
+            'Unknown type={} in IrAssignNode'.format(expr_type))
+
+
+def _SelectInstrForStmt(ir_ast, builder):
+    ir_type = ir_ast.type
+
+    if ir_type == 'assign':
+        _SelectInstrForAssign(ir_ast, builder)
+    elif ir_type == 'return':
+        x86_arg = _GetX86ArgNodeFromIr(ir_ast.arg, builder)
+        x86_instr = X86InstrNode(x86c.RET, x86_arg)
+        builder.AddInstr(x86_instr)
+    else:
+        raise CompilingError('Unknown type={} in IrStmtNode'.format(ir_type))
+
+
+def SelectInstruction(ir_ast):
+    assert ir_ast.type == 'program'
+    builder = _SelectInstructionBuilder()
+    for stmt in ir_ast.stmt_list:
+        _SelectInstrForStmt(stmt, builder)
+
+    x86_var_list = builder.var_list
+    x86_instr_list = builder.instr_list
+    assert len(x86_var_list) == len(ir_ast.var_list)
+    return X86ProgramNode(-1, x86_var_list, x86_instr_list)
 
 '''Compile
 Calls all the passes on the Scheme AST.
