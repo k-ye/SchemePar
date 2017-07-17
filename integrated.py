@@ -24,9 +24,12 @@ if __name__ == '__main__':
                 lines.append(line)
         test_data = ''.join(lines)
 
-    print('Source code:')
-    print(test_data)
-    print('---\n')
+    def PrintSourceCode(header, code):
+        print(header)
+        print(code)
+        print('---\n')
+
+    PrintSourceCode('Source code', test_data)
 
     lexer = SchemeLexer()
     parser = SchemeParser()
@@ -34,13 +37,10 @@ if __name__ == '__main__':
     assert ast.type == 'program'
 
     sch_ast = Uniquify(ast)
-    print('Souce code after uniquify:')
-    print(sch_ast.source_code())
-    print('---\n')
+    PrintSourceCode('Source code after uniquify', sch_ast.source_code())
 
     ir_ast = Flatten(sch_ast)
-    print('IR Souce code:')
-    print(ir_ast.source_code())
-    print('---\n')
+    PrintSourceCode('IR source code', ir_ast.source_code())
 
     x86_ast = SelectInstruction(ir_ast)
+    PrintSourceCode('X86 (Select Instruction)', x86_ast.source_code())

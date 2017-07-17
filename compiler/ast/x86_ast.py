@@ -68,6 +68,24 @@ class X86ProgramNode(X86Node):
     def instr_list(self):
         return self._instr_list
 
+    def _source_code(self, builder):
+        builder.Append('( program')
+        with builder.Indent():
+            builder.NewLine()
+            builder.Append('# variables def')
+            builder.NewLine()
+            builder.Append('(')
+            for var in self._var_list:
+                var._source_code(builder)
+            builder.Append(')')
+            builder.NewLine()
+            builder.Append('# instructions')
+            for instr in self._instr_list:
+                builder.NewLine()
+                instr._source_code(builder)
+        builder.NewLine()
+        builder.Append(')')
+
 
 class X86InstrNode(X86Node):
 
@@ -92,6 +110,12 @@ class X86InstrNode(X86Node):
     def operand_list(self):
         return self._operand_list
 
+    def _source_code(self, builder):
+        builder.Append('( {}'.format(self.instr))
+        for op in self.operand_list:
+            op._source_code(builder)
+        builder.Append(')')
+
 
 class X86ArgNode(X86Node):
     pass
@@ -109,7 +133,10 @@ class X86IntNode(X86ArgNode):
 
     @property
     def x(self):
-        return x
+        return self._x
+
+    def _source_code(self, builder):
+        builder.Append(self.x)
 
 
 class X86RegNode(X86ArgNode):
@@ -128,6 +155,9 @@ class X86RegNode(X86ArgNode):
     @property
     def reg(self):
         return self._reg
+
+    def _source_code(self, builder):
+        builder.Append(self.reg)
 
 
 class X86DerefNode(X86ArgNode):
@@ -153,6 +183,8 @@ class X86DerefNode(X86ArgNode):
     def offset(self):
         return self._offs
 
+    def _source_code(self, builder):
+        builder.Append('{} ({})'.format(self.offset, self.reg))
 
 class X86VarNode(X86ArgNode):
 
@@ -170,3 +202,6 @@ class X86VarNode(X86ArgNode):
     @property
     def var(self):
         return self._var
+
+    def _source_code(self, builder):
+        builder.Append(self.var)
