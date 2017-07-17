@@ -1,4 +1,4 @@
-from ast_utils import AstNodeBase
+from ast_utils import *
 
 
 class IrNode(AstNodeBase):
@@ -26,22 +26,7 @@ class IrProgramNode(IrNode):
         return self._stmt_list
 
     def _source_code(self, builder):
-        builder.Append('( program')
-        with builder.Indent():
-            builder.NewLine()
-            builder.Append('# variables def')
-            builder.NewLine()
-            builder.Append('(')
-            for var in self._var_list:
-                var._source_code(builder)
-            builder.Append(')')
-            builder.NewLine()
-            builder.Append('# statements')
-            for stmt in self._stmt_list:
-                builder.NewLine()
-                stmt._source_code(builder)
-        builder.NewLine()
-        builder.Append(')')
+        GenProgramSourceCode(self.var_list, self.stmt_list, builder)
 
 
 class IrStmtNode(IrNode):
@@ -184,7 +169,4 @@ class IrApplyNode(IrExprNode):
         self._arg_list = arg_list
 
     def _source_code(self, builder):
-        builder.Append('({}'.format(self.method))
-        for a in self._arg_list:
-            a._source_code(builder)
-        builder.Append(')')
+        GenApplySourceCode(self.method, self.arg_list, builder)

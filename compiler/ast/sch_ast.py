@@ -1,4 +1,4 @@
-from ast_utils import AstNodeBase
+from ast_utils import *
 
 
 class SchNode(AstNodeBase):
@@ -84,10 +84,7 @@ class SchApplyNode(SchExprNode):
         self._arg_list = arg_list
 
     def _source_code(self, builder):
-        builder.Append('({}'.format(self.method))
-        for a in self._arg_list:
-            a._source_code(builder)
-        builder.Append(')')
+        GenApplySourceCode(self.method, self.arg_list, builder)
 
 
 class SchLetNode(SchExprNode):

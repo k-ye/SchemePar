@@ -1,41 +1,4 @@
-from ast_utils import AstNodeBase
-
-'''
-x86 : ( PROGRAM INT maybe_var_list instr_list )
-
-maybe_var_list  # only used internally
-    : empty
-    | _var maybe_var_list
-
-instr_list
-    : instr
-    | instr instr_list
-
-# Operand order of binary instruction follows the AT&T standard.
-# INSTR SRC DST
-
-instr
-    : ( ADD arg arg )
-    | ( SUB arg arg )
-    | ( NEG arg )
-    | ( MOV arg arg )
-    | ( CALL LABEL )
-    | ( PUSH arg )
-    | ( POP arg )
-    | ( RET )
-
-arg 
-    : INT
-    | REGISTER
-    | deref
-    | _var # only used internally
-
-deref
-    : INT ( REGISTER )
-    : MINUS INT ( REGISTER )
-
-_var : VAR
-'''
+from ast_utils import *
 
 
 class X86Node(AstNodeBase):
@@ -69,22 +32,8 @@ class X86ProgramNode(X86Node):
         return self._instr_list
 
     def _source_code(self, builder):
-        builder.Append('( program')
-        with builder.Indent():
-            builder.NewLine()
-            builder.Append('# variables def')
-            builder.NewLine()
-            builder.Append('(')
-            for var in self._var_list:
-                var._source_code(builder)
-            builder.Append(')')
-            builder.NewLine()
-            builder.Append('# instructions')
-            for instr in self._instr_list:
-                builder.NewLine()
-                instr._source_code(builder)
-        builder.NewLine()
-        builder.Append(')')
+        formatter = DefaultProgramFormatter(stmt_hdr='instructions')
+        GenProgramSourceCode(self.var_list, self.instr_list, builder, formatter)
 
 
 class X86InstrNode(X86Node):
@@ -111,10 +60,7 @@ class X86InstrNode(X86Node):
         return self._operand_list
 
     def _source_code(self, builder):
-        builder.Append('( {}'.format(self.instr))
-        for op in self.operand_list:
-            op._source_code(builder)
-        builder.Append(')')
+        GenApplySourceCode(self.instr, self.operand_list, builder)
 
 
 class X86ArgNode(X86Node):
@@ -185,6 +131,7 @@ class X86DerefNode(X86ArgNode):
 
     def _source_code(self, builder):
         builder.Append('{} ({})'.format(self.offset, self.reg))
+
 
 class X86VarNode(X86ArgNode):
 
