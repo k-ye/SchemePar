@@ -50,3 +50,6 @@ if __name__ == '__main__':
 
     x86_ast = PatchInstruction(x86_ast)
     PrintSourceCode('X86 (Patch Instructions)', x86_ast.source_code())
+
+    x86_ast = GenerateX86(x86_ast)
+    PrintSourceCode('X86 (Assembly)', x86_ast.source_code())

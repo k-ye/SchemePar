@@ -332,7 +332,7 @@ def _SelectInstrForStmt(ir_ast, builder):
         raise CompilingError('Unknown type={} in IrStmtNode'.format(ir_type))
 
 
-def SelectInstruction(ir_ast):
+def SelectInstruction(ir_ast, formatter=None):
     assert ir_ast.type == 'program'
     builder = _SelectInstructionBuilder()
     for stmt in ir_ast.stmt_list:
@@ -408,6 +408,14 @@ def PatchInstruction(x86_ast):
     return x86_ast
 
 
+'''Generate X86 pass
+'''
+
+def GenerateX86(x86_ast):
+    x86_ast.formatter = MacX86Formatter()
+    return x86_ast
+
+
 '''Compile
 Calls all the passes on the Scheme AST.
 '''
@@ -419,5 +427,6 @@ def Compile(ast):
     x86_ast = SelectInstruction(ir_ast)
     x86_ast = AssignHome(x86_ast)
     x86_ast = PatchInstruction(x86_ast)
+    x86_ast = GenerateX86(x86_ast)
 
     return ir_ast
