@@ -68,6 +68,10 @@ class X86InstrNode(X86Node):
     def operand_list(self, val):
         self._operand_list = val
 
+    @property
+    def arity(self):
+        return len(self._operand_list)
+
     def _source_code(self, builder):
         GenApplySourceCode(self.instr, self.operand_list, builder)
 
@@ -164,6 +168,7 @@ class X86VarNode(X86ArgNode):
 
 
 class X86LabelNode(X86ArgNode):
+
     def __init__(self, label):
         '''
         bael: a string of the label name

@@ -348,6 +348,7 @@ def SelectInstruction(ir_ast):
 This might be replaced by register allocation pass in the future
 '''
 
+
 def AssignHome(x86_ast):
     assert x86_ast.type == 'program'
     dword_sz = 8
@@ -372,7 +373,40 @@ def AssignHome(x86_ast):
     x86_ast.instr_list = instr_list
     assert len(var_stack_map) == len(x86_ast.var_list)
     return x86_ast
-    
+
+
+'''Patch Instruction pass
+Eliminate the cases where the two operands of a binary instruction
+are all memory references, or deref nodes.
+'''
+
+
+def PatchInstruction(x86_ast):
+    assert x86_ast.type == 'program'
+    instr_list = x86_ast.instr_list
+    # a instruction might be splitted into two, hence
+    # we need a new list.
+    new_instr_list = []
+    for instr in x86_ast.instr_list:
+        has_appended = False
+        if instr.arity == 2:
+            op1, op2 = instr.operand_list
+            if op1.type == 'deref' and op2.type == 'deref':
+                tmp_ref = X86RegNode(x86c.RAX)
+                new_instr = X86InstrNode(x86c.MOVE, op1, tmp_ref)
+                new_instr_list.append(new_instr)
+                new_instr = X86InstrNode(instr.instr, tmp_ref, op2)
+                new_instr_list.append(new_instr)
+                has_appended = True
+                instr = new_instr  # this is only needed for the check below
+            dst_type = instr.operand_list[1].type
+            assert dst_type in {'register', 'deref'}, 'dst type={} for instr={}'.format(
+                dst_type, instr.instr)
+        if not has_appended:
+            new_instr_list.append(instr)
+    x86_ast.instr_list = new_instr_list
+    return x86_ast
+
 
 '''Compile
 Calls all the passes on the Scheme AST.
@@ -382,4 +416,8 @@ Calls all the passes on the Scheme AST.
 def Compile(ast):
     ast = Uniquify(ast)
     ir_ast = Flatten(ast)
+    x86_ast = SelectInstruction(ir_ast)
+    x86_ast = AssignHome(x86_ast)
+    x86_ast = PatchInstruction(x86_ast)
+
     return ir_ast
