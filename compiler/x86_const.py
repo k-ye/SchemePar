@@ -3,7 +3,7 @@
 ADD = 'add'
 SUB = 'sub'
 NEG = 'neg'
-MOVE = 'move'
+MOVE = 'mov'
 CALL = 'call'
 PUSH = 'push'
 POP = 'pop'
@@ -17,6 +17,6 @@ RCX = 'rcx'
 RDX = 'rdx'
 RSI = 'rsi'
 RDI = 'rdi'
-REXT = {i: 'r{}'.format(i) for i in xrange(8, 16)} 
+REXT = {i: 'r{}'.format(i) for i in xrange(8, 16)}
 RSP = 'rsp'
 RBP = 'rbp'

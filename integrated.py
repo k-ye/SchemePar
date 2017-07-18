@@ -17,6 +17,7 @@ if __name__ == '__main__':
     )
     ; 42
     '''
+    # test_data = '(let ([x 42]) (let ([y x]) y))'
     if len(sys.argv) > 1:
         lines = []
         with open(sys.argv[1], 'r') as rf:

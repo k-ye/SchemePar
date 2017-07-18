@@ -352,7 +352,7 @@ This might be replaced by register allocation pass in the future
 def AssignHome(x86_ast):
     assert x86_ast.type == 'program'
     dword_sz = 8
-    stack_pos = -dword_sz
+    stack_pos = -2 * dword_sz
     var_stack_map = {}
     instr_list = x86_ast.instr_list
     for i in xrange(len(instr_list)):
@@ -371,6 +371,8 @@ def AssignHome(x86_ast):
         instr.operand_list = operand_list
         instr_list[i] = instr
     x86_ast.instr_list = instr_list
+    # the stack size is computed at this time
+    x86_ast.stack_sz = -stack_pos
     assert len(var_stack_map) == len(x86_ast.var_list)
     return x86_ast
 
@@ -410,6 +412,7 @@ def PatchInstruction(x86_ast):
 
 '''Generate X86 pass
 '''
+
 
 def GenerateX86(x86_ast):
     x86_ast.formatter = MacX86Formatter()

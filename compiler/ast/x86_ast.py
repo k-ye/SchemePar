@@ -19,6 +19,7 @@ class InternalFormatter(object):
 
 
 class MacX86Formatter(object):
+
     def __init__(self):
         self.AddInstr = self._AddInstrDefault
         # self.AddInstr = self._AddInstrPretty
@@ -41,8 +42,11 @@ class MacX86Formatter(object):
             raise RuntimeError('type={} var={}'.format(t, var))
         builder.Append(argstr, append_whitespace=False)
 
+    def _Instr(self, instr):
+        return instr + 'q'
+
     def _AddInstrDefault(self, instr, operand_list, builder):
-        instr = '{0: <6}'.format(instr)
+        instr = '{0: <6}'.format(self._Instr(instr))
         builder.Append(instr)
         last_index = len(operand_list) - 1
         for i, op in enumerate(operand_list):
@@ -52,33 +56,41 @@ class MacX86Formatter(object):
 
     def _AddInstrPretty(self, instr, operand_list, builder):
         last_index = len(operand_list) - 1
-        fmtstrs, strs = ['{: <6} '], [instr]
+        fmtstrs, strs = ['{: <6} '], [self._Instr(instr)]
         for i, op in enumerate(operand_list):
             fs = '{: <16}'
             ops = op.source_code()
             if i < last_index:
-                ops += ', '  
+                ops += ', '
             fmtstrs.append(fs)
             strs.append(ops)
         finalstr = ''.join(fmtstrs).format(*strs)
         builder.Append(finalstr)
 
-    def BeginApply(self, builder):
-        pass
-
-    def SetMethod(self, method, builder):
-        builder.Append(method)
-
-    def AddOperand(self, operand, builder):
-        operand._source_code(builder)
-
-    def EndApply(self, builder):
-        pass
-
     def FormatProgram(self, node, builder):
+        builder.Reset()
+        # beginning
+        with builder.Indent(4):
+            lines = [
+                '.section    __TEXT,__text,regular,pure_instructions',
+                '.macosx_version_min 10, 12',
+                '.globl  _main',
+                '.p2align    4, 0x90',
+            ]
+            for line in lines:
+                builder.NewLine()
+                builder.Append(line)
+        builder.NewLine()
+        builder.Append('_main:')
+
+        # instructions
         program_fmt = DefaultProgramFormatter(stmt_hdr='instructions')
         with builder.Indent(4):
             GenStmtsSourceCode(node.instr_list, builder, program_fmt)
+
+        # end
+        builder.NewLine()
+        builder.Append('.subsections_via_symbols')
 
 
 class X86Node(AstNodeBase):
@@ -118,6 +130,14 @@ class X86ProgramNode(X86Node):
         return 'program'
 
     @property
+    def stack_sz(self):
+        return self._stack_sz
+
+    @stack_sz.setter
+    def stack_sz(self, val):
+        self._stack_sz = val
+
+    @property
     def var_list(self):
         return self._var_list
 
@@ -139,6 +159,8 @@ class X86ProgramNode(X86Node):
             for instr in self.instr_list:
                 instr.formatter = self.formatter
         except AttributeError:
+            # This might be called by the base __init__, at which time neither
+            # self._var_list nor self._instr_list exists.
             pass
 
 
@@ -181,6 +203,8 @@ class X86InstrNode(X86Node):
             for op in self.operand_list:
                 op.formatter = self.formatter
         except AttributeError:
+            # This might be called by the base __init__, at which time
+            # self._operand_list does not exist yet.
             pass
 
 
