@@ -44,3 +44,6 @@ if __name__ == '__main__':
 
     x86_ast = SelectInstruction(ir_ast)
     PrintSourceCode('X86 (Select Instruction)', x86_ast.source_code())
+
+    x86_ast = AssignHome(x86_ast)
+    PrintSourceCode('X86 (Assign Home)', x86_ast.source_code())

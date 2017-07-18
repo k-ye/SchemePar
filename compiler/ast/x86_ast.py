@@ -31,9 +31,14 @@ class X86ProgramNode(X86Node):
     def instr_list(self):
         return self._instr_list
 
+    @instr_list.setter
+    def instr_list(self, val):
+        self._instr_list = val
+
     def _source_code(self, builder):
         formatter = DefaultProgramFormatter(stmt_hdr='instructions')
-        GenProgramSourceCode(self.var_list, self.instr_list, builder, formatter)
+        GenProgramSourceCode(
+            self.var_list, self.instr_list, builder, formatter)
 
 
 class X86InstrNode(X86Node):
@@ -59,6 +64,10 @@ class X86InstrNode(X86Node):
     def operand_list(self):
         return self._operand_list
 
+    @operand_list.setter
+    def operand_list(self, val):
+        self._operand_list = val
+
     def _source_code(self, builder):
         GenApplySourceCode(self.instr, self.operand_list, builder)
 
@@ -82,7 +91,7 @@ class X86IntNode(X86ArgNode):
         return self._x
 
     def _source_code(self, builder):
-        builder.Append(self.x)
+        builder.Append('( int {} )'.format(self.x))
 
 
 class X86RegNode(X86ArgNode):
@@ -103,7 +112,7 @@ class X86RegNode(X86ArgNode):
         return self._reg
 
     def _source_code(self, builder):
-        builder.Append(self.reg)
+        builder.Append('( reg {} )'.format(self.reg))
 
 
 class X86DerefNode(X86ArgNode):
@@ -130,7 +139,7 @@ class X86DerefNode(X86ArgNode):
         return self._offs
 
     def _source_code(self, builder):
-        builder.Append('{} ({})'.format(self.offset, self.reg))
+        builder.Append('( deref {} {} )'.format(self.reg, self.offset))
 
 
 class X86VarNode(X86ArgNode):
@@ -151,4 +160,24 @@ class X86VarNode(X86ArgNode):
         return self._var
 
     def _source_code(self, builder):
-        builder.Append(self.var)
+        builder.Append('( _var {} )'.format(self.var))
+
+
+class X86LabelNode(X86ArgNode):
+    def __init__(self, label):
+        '''
+        bael: a string of the label name
+        '''
+        super(X86LabelNode, self).__init__()
+        self._label = label
+
+    @property
+    def type(self):
+        return 'label'
+
+    @property
+    def label(self):
+        return self._label
+
+    def _source_code(self, builder):
+        builder.Append('( label {} )'.format(self.label))

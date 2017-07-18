@@ -264,7 +264,8 @@ def _GetX86ArgNodeFromIr(ir_arg, builder):
 
 
 def _SelectInstrForArg(ir_arg, x86_asn_var, builder):
-    assert isinstance(x86_asn_var, X86VarNode), 'x86_asn_var type={}'.format(type(x86_asn_var))
+    assert isinstance(x86_asn_var, X86VarNode), 'x86_asn_var type={}'.format(
+        type(x86_asn_var))
     if ir_arg.type == 'var':
         # check that there is no side effect, meaning that assignment like
         # 'x <- x + 42' cannot exist at this point.
@@ -284,7 +285,7 @@ def _SelectInstrForApply(ir_apply, x86_asn_var, builder):
 
     if method == 'read':
         # runtime provides read_int function
-        x86_instr = X86InstrNode(x86c.CALL, 'read_int')
+        x86_instr = X86InstrNode(x86c.CALL, X86LabelNode('read_int'))
         builder.AddInstr(x86_instr)
         x86_instr = X86InstrNode(x86c.MOVE, X86RegNode(x86c.RAX), x86_asn_var)
         builder.AddInstr(x86_instr)
@@ -341,6 +342,37 @@ def SelectInstruction(ir_ast):
     x86_instr_list = builder.instr_list
     assert len(x86_var_list) == len(ir_ast.var_list)
     return X86ProgramNode(-1, x86_var_list, x86_instr_list)
+
+
+'''Assign-Home pass
+This might be replaced by register allocation pass in the future
+'''
+
+def AssignHome(x86_ast):
+    assert x86_ast.type == 'program'
+    dword_sz = 8
+    stack_pos = -dword_sz
+    var_stack_map = {}
+    instr_list = x86_ast.instr_list
+    for i in xrange(len(instr_list)):
+        instr = instr_list[i]
+        operand_list = instr.operand_list
+        for j in xrange(len(operand_list)):
+            operand = operand_list[j]
+            if operand.type == 'var':
+                # replace Var with Deref
+                var = operand.var
+                if var not in var_stack_map:
+                    var_stack_map[var] = stack_pos
+                    stack_pos -= dword_sz
+                operand = X86DerefNode(x86c.RBP, var_stack_map[var])
+                operand_list[j] = operand
+        instr.operand_list = operand_list
+        instr_list[i] = instr
+    x86_ast.instr_list = instr_list
+    assert len(var_stack_map) == len(x86_ast.var_list)
+    return x86_ast
+    
 
 '''Compile
 Calls all the passes on the Scheme AST.
