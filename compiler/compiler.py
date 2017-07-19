@@ -1,6 +1,8 @@
 from __future__ import print_function
 
 from ast.scoped_env import ScopedEnv, ScopedEnvNode
+from ast.base import *
+from ast.sch_ast import *
 from ast.ir_ast import *
 from ast.x86_ast import *
 import x86_const as x86c
@@ -43,45 +45,65 @@ class _UniquifyScopedEnvNode(ScopedEnvNode):
         return key in self._local_kv
 
     def Get(self, key):
-        result = self._local_kv.get(key, None)
-        if result is None:
-            raise KeyError('Cannot find key: {}'.format(key))
-        return result
+        return self._local_kv[key]
 
     def Add(self, key, value):
-        # |value| is not used
+        # |value| is not used in this function
         count = self._global_count.get(key, 0)
+        assert key not in self._local_kv
         self._local_kv[key] = '{}_{}'.format(key, count)
         self._global_count[key] = count + 1
 
 
-def _Uniquify(ast, env):
-    ast_type = ast.type
-    if ast_type == 'program':
-        ast.program = _Uniquify(ast.program, env)
-    elif ast_type == 'int':
-        pass
-    elif ast_type == 'var':
-        ast.var = env.Get(ast.var)
-    elif ast_type == 'apply':
-        new_arg_list = []
-        for arg in ast.arg_list:
-            new_arg_list.append(_Uniquify(arg, env))
-        ast.set_arg_list(new_arg_list)
-    elif ast_type == 'let':
-        var_list1 = []
-        for var, var_init in ast.var_list:
-            var_list1.append((var, _Uniquify(var_init, env)))
+class _UniquifyVisitor(SchAstVisitorBase):
 
-        with env.Scope():
+    def __init__(self):
+        super(_UniquifyVisitor, self).__init__()
+
+    def _BeginVisit(self):
+
+        class Factory(object):
+
+            def __init__(self):
+                self._global_count = {}
+
+            def Build(self):
+                return _UniquifyScopedEnvNode(self._global_count)
+
+        self._env = ScopedEnv(Factory())
+
+    def VisitProgram(self, node):
+        prg_expr = GetSchProgram(node)
+        SetSchProgram(node, self._Visit(prg_expr))
+        return node
+
+    def VisitApply(self, node):
+        new_expr_list = []
+        for app_expr in GetSchApplyExprList(node):
+            new_expr_list.append(self._Visit(app_expr))
+        SetSchApplyExprList(node, new_expr_list)
+        return node
+
+    def VisitLet(self, node):
+        var_list1 = [(var, self._Visit(var_init))
+                     for var, var_init in GetNodeVarList(node)]
+        with self._env.Scope():
             var_list2 = []
             for var, var_init in var_list1:
-                assert var.type == 'var'
-                env.Add(var.var, None)
-                var_list2.append((_Uniquify(var, env), var_init))
-            ast.set_var_list(var_list2)
-            ast.body = _Uniquify(ast.body, env)
-    return ast
+                assert TypeOf(var) == VAR_NODE_T
+                self._env.Add(GetNodeVar(var), None)
+                var_list2.append((self._Visit(var), var_init))
+            SetNodeVarList(node, var_list2)
+            SetSchLetBody(node, self._Visit(GetSchLetBody(node)))
+        return node
+
+    def VisitInt(self, node):
+        return node
+
+    def VisitVar(self, node):
+        old_var = GetNodeVar(node)
+        SetNodeVar(node, self._env.Get(old_var))
+        return node
 
 
 def Uniquify(ast):
@@ -90,16 +112,8 @@ def Uniquify(ast):
     |ast|: An SchNode. In production this should be an SchProgramNode. The
             correctness should already be verified in the analysis pass.
     '''
-    class Builder(object):
-
-        def __init__(self):
-            self._global_count = {}
-
-        def Build(self):
-            return _UniquifyScopedEnvNode(self._global_count)
-
-    env = ScopedEnv(Builder())
-    return _Uniquify(ast, env)
+    visitor = _UniquifyVisitor()
+    return visitor.Visit(ast)
 
 
 class _LowLvPassBuilder(object):
@@ -150,14 +164,14 @@ This pass flattens an Scheme AST to an equivalent IR AST
 '''
 
 
-class _FlattenBuilder(_LowLvPassBuilder):
+class _SchToIrBuilder(_LowLvPassBuilder):
 
     def __init__(self):
-        super(_FlattenBuilder, self).__init__()
+        super(_SchToIrBuilder, self).__init__()
         self._next_tmp = 0
 
     def _CreateVar(self, var):
-        return IrVarNode(var)
+        return MakeIrVarNode(var)
 
     def AllocateTmpVar(self):
         tmp_var = 'tmp_{}'.format(self._next_tmp)
@@ -165,64 +179,52 @@ class _FlattenBuilder(_LowLvPassBuilder):
         return self.AddVar(tmp_var)
 
 
-def _FlattenSchExpr(sch_ast, builder):
-    '''
-    It is the caller's responsibility to decide whether to create an assign stmt
-    for the returned node.
+class _FlattenVisitor(SchAstVisitorBase):
 
-    |sch_ast|: An SchExprNode or its subclass
-    Returns: An IrExprNode
-    '''
-    ir_ast = None
-    sch_type = sch_ast.type
+    def __init__(self):
+        super(_FlattenVisitor, self).__init__()
 
-    if sch_type == 'int':
-        ir_ast = IrIntNode(sch_ast.x)
-    elif sch_type == 'var':
-        ir_ast = builder.GetVar(sch_ast.var)
-    elif sch_type == 'apply':
+    def _BeginVisit(self):
+        self._builder = _SchToIrBuilder()
+
+    def VisitProgram(self, node):
+        ir_expr = self._Visit(GetSchProgram(node))
+        ret_var = ir_expr
+        builder = self._builder
+        if not IsIrArgNode(ir_expr):
+            ret_var = builder.AllocateTmpVar()
+            builder.AddStmt(MakeIrAssignNode(ret_var, ir_expr))
+        builder.AddStmt(MakeIrReturnNode(ret_var))
+        return MakeIrProgramNode(builder.var_list, builder.stmt_list)
+
+    def VisitApply(self, node):
         new_arg_list = []
-        for arg in sch_ast.arg_list:
-            ir_expr = _FlattenSchExpr(arg, builder)
+        for expr in GetSchApplyExprList(node):
+            ir_expr = self._Visit(expr)
             if IsIrArgNode(ir_expr):
                 new_arg_list.append(ir_expr)
             else:
-                tmp_var = builder.AllocateTmpVar()
-                builder.AddStmt(IrAssignNode(tmp_var, ir_expr))
+                tmp_var = self._builder.AllocateTmpVar()
+                self._builder.AddStmt(MakeIrAssignNode(tmp_var, ir_expr))
                 new_arg_list.append(tmp_var)
-        ir_ast = IrApplyNode(sch_ast.method, new_arg_list)
-    elif sch_type == 'let':
+        return MakeIrApplyNode(GetNodeMethod(node), new_arg_list)
+
+    def VisitLet(self, node):
         ir_var_init = []
-        for var, var_init in sch_ast.var_list:
-            ir_init = _FlattenSchExpr(var_init, builder)
+        for var, var_init in GetNodeVarList(node):
+            ir_init = self._Visit(var_init)
             # Cannot add assign stmt yet, cache it in |ir_var_init|
-            ir_var_init.append((var.var, ir_init))
+            ir_var_init.append((GetNodeVar(var), ir_init))
         for var_name, ir_init in ir_var_init:
-            ir_var = builder.AddVar(var_name)
-            builder.AddStmt(IrAssignNode(ir_var, ir_init))
-        ir_ast = _FlattenSchExpr(sch_ast.body, builder)
-    else:
-        raise CompilingError(
-            'SchNode.type={} is not an "expr"'.format(sch_type))
-    return ir_ast
+            ir_var = self._builder.AddVar(var_name)
+            self._builder.AddStmt(MakeIrAssignNode(ir_var, ir_init))
+        return self._Visit(GetSchLetBody(node))
 
+    def VisitInt(self, node):
+        return MakeIrIntNode(GetIntX(node))
 
-def _Flatten(sch_ast, builder):
-    '''
-    Returns: An IrNode
-    '''
-    ir_ast = None
-    if sch_ast.type == 'program':
-        ir_expr = _FlattenSchExpr(sch_ast.program, builder)
-        ret_var = ir_expr
-        if not IsIrArgNode(ir_expr):
-            ret_var = builder.AllocateTmpVar()
-            builder.AddStmt(IrAssignNode(ret_var, ir_expr))
-        builder.AddStmt(IrReturnNode(ret_var))
-        ir_ast = IrProgramNode(builder.var_list, builder.stmt_list)
-    else:
-        ir_ast = _FlattenSchExpr(sch_ast, builder)
-    return ir_ast
+    def VisitVar(self, node):
+        return self._builder.GetVar(GetNodeVar(node))
 
 
 def Flatten(sch_ast):
@@ -231,118 +233,138 @@ def Flatten(sch_ast):
     |sch_ast|: An SchNode. In production this should be an SchProgramNode.
     Returns: An IrNode
     '''
-    return _Flatten(sch_ast, _FlattenBuilder())
+    visitor = _FlattenVisitor()
+    return visitor.Visit(sch_ast)
+    # return _Flatten(sch_ast, _FlattenBuilder())
 
 
 '''Select-instruction pass
-
 '''
 
 
-class _SelectInstructionBuilder(_LowLvPassBuilder):
+class _IrToX86Builder(_LowLvPassBuilder):
 
     def _CreateVar(self, var):
-        return X86VarNode(var)
+        return MakeX86VarNode(var)
 
     def AddInstr(self, instr):
-        assert isinstance(instr, X86InstrNode)
-        super(_SelectInstructionBuilder, self).AddStmt(instr)
+        assert LangOf(instr) == X86_LANG and TypeOf(instr) == X86_INSTR_NODE_T
+        super(_IrToX86Builder, self).AddStmt(instr)
 
     @property
     def instr_list(self):
         return self.stmt_list
 
-
-def _GetX86ArgNodeFromIr(ir_arg, builder):
-    assert IsIrArgNode(ir_arg)
-    if ir_arg.type == 'int':
-        return X86IntNode(ir_arg.x)
-    elif ir_arg.type == 'var':
-        return builder.GetVar(ir_arg.var)
-    # impossible to reach here
-    assert False
+    def GetX86Ast(self):
+        return MakeX86ProgramNode(-1, self.var_list, self.instr_list)
 
 
-def _SelectInstrForArg(ir_arg, x86_asn_var, builder):
-    assert isinstance(x86_asn_var, X86VarNode), 'x86_asn_var type={}'.format(
-        type(x86_asn_var))
-    if ir_arg.type == 'var':
-        # check that there is no side effect, meaning that assignment like
-        # 'x <- x + 42' cannot exist at this point.
-        assert ir_arg.var != x86_asn_var.var
+class _SelectInstructionVisitor(IrAstVisitorBase):
 
-    x86_arg = _GetX86ArgNodeFromIr(ir_arg, builder)
-    x86_instr = X86InstrNode(x86c.MOVE, x86_arg, x86_asn_var)
-    builder.AddInstr(x86_instr)
+    def __init__(self):
+        super(_SelectInstructionVisitor, self).__init__()
 
+    def _BeginVisit(self):
+        self._builder = _IrToX86Builder()
 
-def _SelectInstrForApply(ir_apply, x86_asn_var, builder):
-    assert isinstance(ir_apply, IrApplyNode) and ir_apply.type == 'apply'
-    assert isinstance(x86_asn_var, X86VarNode)
+    def _EndVisit(self, node, visit_result):
+        return self._builder.GetX86Ast()
 
-    method = ir_apply.method
-    ir_operands = ir_apply.arg_list
+    def VisitProgram(self, node):
+        for stmt in GetNodeStmtList(node):
+            self._Visit(stmt)
+        assert len(self._builder.var_list) == len(
+            GetNodeVarList(node))
 
-    if method == 'read':
-        # runtime provides read_int function
-        x86_instr = X86InstrNode(x86c.CALL, X86LabelNode('read_int'))
-        builder.AddInstr(x86_instr)
-        x86_instr = X86InstrNode(x86c.MOVE, X86RegNode(x86c.RAX), x86_asn_var)
-        builder.AddInstr(x86_instr)
-    elif method == '-':
-        # TODO: Currently this means negation. Later on subtraction also needs
-        # to be handled
-        _SelectInstrForArg(ir_operands[0], x86_asn_var, builder)
-        x86_instr = X86InstrNode(x86c.NEG, x86_asn_var)
-        builder.AddInstr(x86_instr)
-    elif method == '+':
-        _SelectInstrForArg(ir_operands[0], x86_asn_var, builder)
-        x86_instr = X86InstrNode(
-            x86c.ADD, _GetX86ArgNodeFromIr(ir_operands[1], builder), x86_asn_var)
-        builder.AddInstr(x86_instr)
-    else:
-        raise CompilingError('Unknown method={} in IrApplyNode'.format(method))
+    def VisitAssign(self, node):
+        var_name = GetNodeVar(GetNodeVar(node))
+        x86_asn_var = self._builder.AddVar(var_name)
+        ir_expr = GetIrAssignExpr(node)
 
+        if IsIrArgNode(ir_expr):
+            # non-standard visitor pattern call
+            self._SelectForArg(ir_expr, x86_asn_var)
+        elif TypeOf(ir_expr) == APPLY_NODE_T:
+            # non-standard visitor pattern call
+            self._SelectForApply(ir_expr, x86_asn_var)
+        else:
+            raise RuntimeError(
+                'Unknown type={} in IrAssignNode'.format(expr_type))
 
-def _SelectInstrForAssign(ir_asn, builder):
-    x86_asn_var = builder.AddVar(ir_asn.var.var)
-    ir_expr = ir_asn.expr
-    expr_type = ir_expr.type
+    def VisitReturn(self, node):
+        x86_arg = self._MakeX86ArgNode(GetIrReturnArg(node))
+        # return value goes to %rax
+        x86_instr = MakeX86InstrNode(
+            x86c.MOVE, x86_arg, MakeX86RegNode(x86c.RAX))
+        self._builder.AddInstr(x86_instr)
+        self._builder.AddInstr(MakeX86InstrNode(x86c.RET))
 
-    if IsIrArgNode(ir_expr):
-        # 'int' or 'var'
-        _SelectInstrForArg(ir_expr, x86_asn_var, builder)
-    elif expr_type == 'apply':
-        _SelectInstrForApply(ir_expr, x86_asn_var, builder)
-    else:
-        raise CompilingError(
-            'Unknown type={} in IrAssignNode'.format(expr_type))
+    def VisitInt(self, node):
+        raise RuntimeError("Shouldn't get called")
 
+    def VisitVar(self, node):
+        raise RuntimeError("Shouldn't get called")
 
-def _SelectInstrForStmt(ir_ast, builder):
-    ir_type = ir_ast.type
+    def _MakeX86ArgNode(self, node):
+        assert IsIrArgNode(node)
+        ndtype = TypeOf(node)
+        if ndtype == INT_NODE_T:
+            return MakeX86IntNode(GetIntX(node))
+        elif ndtype == VAR_NODE_T:
+            return self._builder.GetVar(GetNodeVar(node))
+        raise RuntimeError('type={}'.format(ndtype))
 
-    if ir_type == 'assign':
-        _SelectInstrForAssign(ir_ast, builder)
-    elif ir_type == 'return':
-        x86_arg = _GetX86ArgNodeFromIr(ir_ast.arg, builder)
-        x86_instr = X86InstrNode(x86c.RET, x86_arg)
-        builder.AddInstr(x86_instr)
-    else:
-        raise CompilingError('Unknown type={} in IrStmtNode'.format(ir_type))
+    def _SelectForArg(self, node, x86_asn_var):
+        assert LangOf(x86_asn_var) == X86_LANG
+        assert TypeOf(x86_asn_var) == VAR_NODE_T
+        if TypeOf(node) == VAR_NODE_T:
+            # check that there is no side effect, meaning that assignment like
+            # 'x <- x + 42' cannot exist at this point.
+            assert GetNodeVar(node) != GetNodeVar(x86_asn_var)
+
+        x86_arg = self._MakeX86ArgNode(node)
+        x86_instr = MakeX86InstrNode(x86c.MOVE, x86_arg, x86_asn_var)
+        self._builder.AddInstr(x86_instr)
+
+    def VisitApply(self, node):
+        raise RuntimeError("Shouldn't get called")
+
+    def _SelectForApply(self, node, x86_asn_var):
+        assert LangOf(x86_asn_var) == X86_LANG
+        assert TypeOf(x86_asn_var) == VAR_NODE_T
+
+        builder = self._builder
+        method = GetNodeMethod(node)
+        ir_operands = GetNodeArgList(node)
+
+        if method == 'read':
+            # runtime provides read_int function
+            x86_instr = MakeX86InstrNode(
+                x86c.CALL, MakeX86LabelNode('read_int'))
+            builder.AddInstr(x86_instr)
+            x86_instr = MakeX86InstrNode(
+                x86c.MOVE, MakeX86RegNode(x86c.RAX), x86_asn_var)
+            builder.AddInstr(x86_instr)
+        elif method == '-':
+            # TODO: Currently this means negation. Later on subtraction also needs
+            # to be handled
+            self._SelectForArg(ir_operands[0], x86_asn_var)
+            x86_instr = MakeX86InstrNode(x86c.NEG, x86_asn_var)
+            builder.AddInstr(x86_instr)
+        elif method == '+':
+            self._SelectForArg(ir_operands[0], x86_asn_var)
+            x86_instr = MakeX86InstrNode(
+                x86c.ADD, self._MakeX86ArgNode(ir_operands[1]), x86_asn_var)
+            builder.AddInstr(x86_instr)
+        else:
+            raise RuntimeError(
+                'Unknown method={} in IrApplyNode'.format(method))
 
 
 def SelectInstruction(ir_ast, formatter=None):
-    assert ir_ast.type == 'program'
-    builder = _SelectInstructionBuilder()
-    for stmt in ir_ast.stmt_list:
-        _SelectInstrForStmt(stmt, builder)
-
-    x86_var_list = builder.var_list
-    x86_instr_list = builder.instr_list
-    assert len(x86_var_list) == len(ir_ast.var_list)
-    return X86ProgramNode(-1, x86_var_list, x86_instr_list)
-
+    assert LangOf(ir_ast) == IR_LANG and TypeOf(ir_ast) == PROGRAM_NODE_T
+    visitor = _SelectInstructionVisitor()
+    return visitor.Visit(ir_ast)
 
 '''Assign-Home pass
 This might be replaced by register allocation pass in the future
@@ -350,30 +372,28 @@ This might be replaced by register allocation pass in the future
 
 
 def AssignHome(x86_ast):
-    assert x86_ast.type == 'program'
+    assert LangOf(x86_ast) == X86_LANG and TypeOf(x86_ast) == PROGRAM_NODE_T
     dword_sz = 8
     stack_pos = -2 * dword_sz
     var_stack_map = {}
-    instr_list = x86_ast.instr_list
-    for i in xrange(len(instr_list)):
-        instr = instr_list[i]
-        operand_list = instr.operand_list
-        for j in xrange(len(operand_list)):
-            operand = operand_list[j]
-            if operand.type == 'var':
+    instr_list = GetX86ProgramInstrList(x86_ast)
+    for i, instr in enumerate(instr_list):
+        operand_list = GetX86InstrOperandList(instr)
+        for j, operand in enumerate(operand_list):
+            if TypeOf(operand) == VAR_NODE_T:
                 # replace Var with Deref
-                var = operand.var
+                var = GetNodeVar(operand)
                 if var not in var_stack_map:
                     var_stack_map[var] = stack_pos
                     stack_pos -= dword_sz
-                operand = X86DerefNode(x86c.RBP, var_stack_map[var])
+                operand = MakeX86DerefNode(x86c.RBP, var_stack_map[var])
                 operand_list[j] = operand
-        instr.operand_list = operand_list
+        SetX86InstrOperandList(instr, operand_list)
         instr_list[i] = instr
-    x86_ast.instr_list = instr_list
+    SetX86ProgramInstrList(x86_ast, instr_list)
     # the stack size is computed at this time
-    x86_ast.stack_sz = -stack_pos
-    assert len(var_stack_map) == len(x86_ast.var_list)
+    SetX86ProgramStackSize(x86_ast, -stack_pos)
+    assert len(var_stack_map) == len(GetNodeVarList(x86_ast))
     return x86_ast
 
 
@@ -384,29 +404,28 @@ are all memory references, or deref nodes.
 
 
 def PatchInstruction(x86_ast):
-    assert x86_ast.type == 'program'
-    instr_list = x86_ast.instr_list
-    # a instruction might be splitted into two, hence
-    # we need a new list.
+    assert LangOf(x86_ast) == X86_LANG and TypeOf(x86_ast) == PROGRAM_NODE_T
+    instr_list = GetX86ProgramInstrList(x86_ast)
+    # a instruction might be splitted into two, hence we need a new list.
     new_instr_list = []
-    for instr in x86_ast.instr_list:
+    for instr in instr_list:
         has_appended = False
-        if instr.arity == 2:
-            op1, op2 = instr.operand_list
-            if op1.type == 'deref' and op2.type == 'deref':
-                tmp_ref = X86RegNode(x86c.RAX)
-                new_instr = X86InstrNode(x86c.MOVE, op1, tmp_ref)
+        if GetX86InstrArity(instr) == 2:
+            op1, op2 = GetX86InstrOperandList(instr)
+            if TypeOf(op1) == X86_DEREF_NODE_T and TypeOf(op2) == X86_DEREF_NODE_T:
+                tmp_ref = MakeX86RegNode(x86c.RAX)
+                new_instr = MakeX86InstrNode(x86c.MOVE, op1, tmp_ref)
                 new_instr_list.append(new_instr)
-                new_instr = X86InstrNode(instr.instr, tmp_ref, op2)
+                new_instr = MakeX86InstrNode(GetX86Instr(instr), tmp_ref, op2)
                 new_instr_list.append(new_instr)
                 has_appended = True
                 instr = new_instr  # this is only needed for the check below
-            dst_type = instr.operand_list[1].type
-            assert dst_type in {'register', 'deref'}, 'dst type={} for instr={}'.format(
-                dst_type, instr.instr)
+            dst_type = TypeOf(GetX86InstrOperandList(instr)[1])
+            assert dst_type in {X86_REG_NODE_T, X86_DEREF_NODE_T}, \
+                'dst type={} for instr={}'.format(dst_type, GetX86Instr(instr))
         if not has_appended:
             new_instr_list.append(instr)
-    x86_ast.instr_list = new_instr_list
+    SetX86ProgramInstrList(x86_ast, new_instr_list)
     return x86_ast
 
 
@@ -415,8 +434,7 @@ def PatchInstruction(x86_ast):
 
 
 def GenerateX86(x86_ast):
-    x86_ast.formatter = MacX86Formatter()
-    return x86_ast
+    return X86SourceCode(x86_ast, MacX86Formatter())
 
 
 '''Compile
@@ -424,12 +442,12 @@ Calls all the passes on the Scheme AST.
 '''
 
 
-def Compile(ast):
-    ast = Uniquify(ast)
-    ir_ast = Flatten(ast)
+def Compile(sch_ast):
+    sch_ast = Uniquify(sch_ast)
+    ir_ast = Flatten(sch_ast)
     x86_ast = SelectInstruction(ir_ast)
     x86_ast = AssignHome(x86_ast)
     x86_ast = PatchInstruction(x86_ast)
     x86_ast = GenerateX86(x86_ast)
 
-    return ir_ast
+    return x86_ast

@@ -35,22 +35,20 @@ if __name__ == '__main__':
     lexer = SchemeLexer()
     parser = SchemeParser()
     ast = parser.parse(test_data, lexer=lexer)
-    assert ast.type == 'program'
 
     sch_ast = Uniquify(ast)
-    PrintSourceCode('Source code after uniquify', sch_ast.source_code())
+    PrintSourceCode('Source code after uniquify', SchSourceCode(sch_ast))
 
     ir_ast = Flatten(sch_ast)
-    PrintSourceCode('IR source code', ir_ast.source_code())
-
+    PrintSourceCode('IR source code', IrSourceCode(ir_ast))
+    
     x86_ast = SelectInstruction(ir_ast)
-    PrintSourceCode('X86 (Select Instruction)', x86_ast.source_code())
+    PrintSourceCode('X86 (Select Instruction)', X86SourceCode(x86_ast))
 
     x86_ast = AssignHome(x86_ast)
-    PrintSourceCode('X86 (Assign Home)', x86_ast.source_code())
+    PrintSourceCode('X86 (Assign Home)', X86SourceCode(x86_ast))
 
     x86_ast = PatchInstruction(x86_ast)
-    PrintSourceCode('X86 (Patch Instructions)', x86_ast.source_code())
+    PrintSourceCode('X86 (Patch Instructions)', X86SourceCode(x86_ast))
 
-    x86_ast = GenerateX86(x86_ast)
-    PrintSourceCode('X86 (Assembly)', x86_ast.source_code())
+    PrintSourceCode('X86 (Assembly)', GenerateX86(x86_ast))

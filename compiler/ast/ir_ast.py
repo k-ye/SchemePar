@@ -1,172 +1,215 @@
-from ast_utils import *
+from base import *
+from src_code_gen import *
+
+''' IR specific
+'''
+IR_LANG = 'ir'
+
+IR_ASSIGN_NODE_T = 'assign'
+IR_RETURN_NODE_T = 'return'
+
+_IR_ASSIGN_P_EXPR = 'expr'
+_IR_RETURN_P_ARG = 'arg'
+
+_NODE_TC = TypeChain(NODE_T, None)
+_STMT_TC = TypeChain(STMT_NODE_T, _NODE_TC)
+_EXPR_TC = TypeChain(EXPR_NODE_T, _NODE_TC)
+_ARG_TC = TypeChain(ARG_NODE_T, _EXPR_TC)
 
 
-class IrNode(AstNodeBase):
-    pass
+def _MakeIrNode(type, parent_tc):
+    return MakeAstNode(type, parent_tc, IR_LANG)
 
 
-class IrProgramNode(IrNode):
-
-    def __init__(self, var_list, stmt_list):
-        super(IrProgramNode, self).__init__()
-
-        self._var_list = var_list
-        self._stmt_list = stmt_list
-
-    @property
-    def type(self):
-        return 'program'
-
-    @property
-    def var_list(self):
-        return self._var_list
-
-    @property
-    def stmt_list(self):
-        return self._stmt_list
-
-    def _source_code(self, builder):
-        GenProgramSourceCode(self.var_list, self.stmt_list, builder)
+def _MakeIrStmtNode(type):
+    return _MakeIrNode(type, _STMT_TC)
 
 
-class IrStmtNode(IrNode):
-    pass
+def _MakeIrExprNode(type):
+    return _MakeIrNode(type, _EXPR_TC)
 
 
-class IrAssignNode(IrStmtNode):
-
-    def __init__(self, var, expr):
-        super(IrAssignNode, self).__init__()
-        assert var.type == 'var'
-        self._var = var
-        self._expr = expr
-
-    @property
-    def type(self):
-        return 'assign'
-
-    @property
-    def var(self):
-        return self._var
-
-    @property
-    def expr(self):
-        return self._expr
-
-    def _source_code(self, builder):
-        builder.Append('( assign')
-        self.var._source_code(builder)
-        self.expr._source_code(builder)
-        builder.Append(')')
+def _MakeIrArgNode(type):
+    return _MakeIrNode(type, _ARG_TC)
 
 
-class IrReturnNode(IrStmtNode):
-
-    def __init__(self, arg):
-        '''
-        arg: An IrIntNode or an IrVarNode
-        '''
-        super(IrReturnNode, self).__init__()
-        assert IsIrArgNode(arg)
-        self._arg = arg
-
-    @property
-    def type(self):
-        return 'return'
-
-    @property
-    def arg(self):
-        return self._arg
-
-    def _source_code(self, builder):
-        builder.Append('( return')
-        self.arg._source_code(builder)
-        builder.Append(')')
+def MakeIrAssignNode(var, expr):
+    assert LangOf(var) == IR_LANG and TypeOf(var) == VAR_NODE_T
+    assert LangOf(expr) == IR_LANG
+    node = _MakeIrStmtNode(IR_ASSIGN_NODE_T)
+    SetProperties(node, {VAR_P_VAR: var, _IR_ASSIGN_P_EXPR: expr})
+    return node
 
 
-class IrExprNode(IrNode):
-    pass
+def GetIrAssignExpr(node):
+    assert LangOf(node) == IR_LANG and TypeOf(node) == IR_ASSIGN_NODE_T
+    return GetProperty(node, _IR_ASSIGN_P_EXPR)
+
+
+def SetIrAssignExpr(node, expr):
+    assert LangOf(node) == IR_LANG and TypeOf(node) == IR_ASSIGN_NODE_T
+    assert LangOf(expr) == IR_LANG
+    SetProperty(node, _IR_ASSIGN_P_EXPR, expr)
+
+
+def MakeIrReturnNode(arg):
+    assert LangOf(arg) == IR_LANG and IsIrArgNode(arg)
+    node = _MakeIrStmtNode(IR_RETURN_NODE_T)
+    SetProperty(node, _IR_RETURN_P_ARG, arg)
+    return node
+
+
+def GetIrReturnArg(node):
+    assert LangOf(node) == IR_LANG and TypeOf(node) == IR_RETURN_NODE_T
+    return GetProperty(node, _IR_RETURN_P_ARG)
+
+
+def SetIrReturnArg(node, arg):
+    assert LangOf(node) == IR_LANG and TypeOf(node) == IR_RETURN_NODE_T
+    assert LangOf(arg) == IR_LANG and IsIrArgNode(arg)
+    SetProperty(node, _IR_RETURN_P_ARG, arg)
+
+
+def MakeIrProgramNode(var_list, stmt_list):
+    node = _MakeIrNode(PROGRAM_NODE_T, _NODE_TC)
+    SetProperty(node, P_VAR_LIST, var_list)
+    SetProperty(node, P_STMT_LIST, stmt_list)
+    return node
 
 
 def IsIrArgNode(node):
-    return isinstance(node, IrExprNode) and node.type in ['int', 'var']
+    if LangOf(node) != IR_LANG:
+        return False
+    try:
+        # parent could be None
+        return ParentOf(node).type == ARG_NODE_T
+    except:
+        return False
 
 
-class IrIntNode(IrExprNode):
-
-    def __init__(self, x):
-        '''
-        x: A natural integer
-        '''
-        super(IrIntNode, self).__init__()
-        self._x = x
-
-    @property
-    def type(self):
-        return 'int'
-
-    @property
-    def x(self):
-        return self._x
-
-    def _source_code(self, builder):
-        builder.Append(self.x)
+def MakeIrIntNode(x):
+    node = _MakeIrArgNode(INT_NODE_T)
+    SetProperty(node, INT_P_X, x)
+    return node
 
 
-class IrVarNode(IrExprNode):
-
-    def __init__(self, var):
-        '''
-        var: A string representing the variable name 
-        '''
-        super(IrVarNode, self).__init__()
-        self._var = var
-
-    @property
-    def type(self):
-        return 'var'
-
-    @property
-    def var(self):
-        return self._var
-
-    @var.setter
-    def var(self, var):
-        self._var = var
-
-    def _source_code(self, builder):
-        builder.Append(self.var)
+def MakeIrVarNode(var):
+    node = _MakeIrArgNode(VAR_NODE_T)
+    SetProperty(node, VAR_P_VAR, var)
+    return node
 
 
-class IrApplyNode(IrExprNode):
+def MakeIrApplyNode(method, arg_list):
+    node = _MakeIrExprNode(APPLY_NODE_T)
+    SetProperties(node, {P_METHOD: method, P_ARG_LIST: arg_list})
+    return node
 
-    def __init__(self, method, arg_list):
-        '''
-        method: A string (for now, later on when we have expression that can 
-                evaluate to applicable, i.e. lambda, we need to store a node)
-        arg_list: A possibly empty list of (IrIntNode|IrVarNode)
-        '''
-        super(IrApplyNode, self).__init__()
-        self._method = method
-        # TODO: rename to *operand_list
-        self.set_arg_list(arg_list)
+''' IR Ast Node Visitor
+'''
 
-    @property
-    def type(self):
-        return 'apply'
 
-    @property
-    def method(self):
-        return self._method
+class IrAstVisitorBase(object):
 
-    @property
-    def arg_list(self):
-        return self._arg_list
+    def Visit(self, node):
+        self._BeginVisit()
+        visit_result = self._Visit(node)
+        return self._EndVisit(node, visit_result)
 
-    def set_arg_list(self, arg_list):
-        for a in arg_list:
-            assert IsIrArgNode(a)
-        self._arg_list = arg_list
+    def _BeginVisit(self):
+        pass
 
-    def _source_code(self, builder):
-        GenApplySourceCode(self.method, self.arg_list, builder)
+    def _EndVisit(self, node, visit_result):
+        return visit_result
+
+    def _Visit(self, node):
+        assert LangOf(node) == IR_LANG
+        ndtype = TypeOf(node)
+        result = None
+        if ndtype == PROGRAM_NODE_T:
+            result = self.VisitProgram(node)
+        elif ndtype == IR_ASSIGN_NODE_T:
+            result = self.VisitAssign(node)
+        elif ndtype == IR_RETURN_NODE_T:
+            result = self.VisitReturn(node)
+        elif ndtype == INT_NODE_T:
+            result = self.VisitInt(node)
+        elif ndtype == VAR_NODE_T:
+            result = self.VisitVar(node)
+        elif ndtype == APPLY_NODE_T:
+            result = self.VisitApply(node)
+        else:
+            raise RuntimeError("Unknown Scheme node type={}".format(ndtype))
+        return result
+
+    def VisitProgram(self, node):
+        return node
+
+    def VisitAssign(self, node):
+        return node
+
+    def VisitReturn(self, node):
+        return node
+
+    def VisitInt(self, node):
+        return node
+
+    def VisitVar(self, node):
+        return node
+
+    def VisitApply(self, node):
+        return node
+
+
+class _IrSourceCodeVisitor(IrAstVisitorBase):
+
+    def __init__(self):
+        super(_IrSourceCodeVisitor, self).__init__()
+
+    def _BeginVisit(self):
+        self._builder = AstSourceCodeBuilder()
+
+    def _EndVisit(self, node, visit_result):
+        return self._builder.Build()
+
+    def _FakeVisit(self, node, builder):
+        assert builder is self._builder
+        return self._Visit(node)
+
+    def VisitProgram(self, node):
+        var_list = GetNodeVarList(node)
+        stmt_list = GetNodeStmtList(node)
+        GenProgramSourceCode(var_list, stmt_list,
+                             self._builder, self._FakeVisit)
+        return node
+
+    def VisitAssign(self, node):
+        self._builder.Append('( assign')
+        self._Visit(GetNodeVar(node))
+        self._Visit(GetIrAssignExpr(node))
+        self._builder.Append(')')
+        return node
+
+    def VisitReturn(self, node):
+        self._builder.Append('( return')
+        self._Visit(GetIrReturnArg(node))
+        self._builder.Append(')')
+        return node
+
+    def VisitInt(self, node):
+        self._builder.Append(GetIntX(node))
+        return node
+
+    def VisitVar(self, node):
+        self._builder.Append(GetNodeVar(node))
+        return node
+
+    def VisitApply(self, node):
+        method = GetNodeMethod(node)
+        arg_list = GetNodeArgList(node)
+        GenApplySourceCode(method, arg_list, self._builder, self._FakeVisit)
+        return node
+
+
+def IrSourceCode(node):
+    visitor = _IrSourceCodeVisitor()
+    return visitor.Visit(node)

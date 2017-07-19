@@ -69,8 +69,8 @@ class DefaultProgramFormatter(object):
         builder.NewLine()
         builder.Append('(')
 
-    def AddVar(self, var, builder):
-        var._source_code(builder)
+    def AddVar(self, var, builder, src_code_gen):
+        src_code_gen(var, builder)
 
     def EndVarDefs(self, builder):
         builder.Append(')')
@@ -79,41 +79,41 @@ class DefaultProgramFormatter(object):
         builder.NewLine()
         builder.Append('# {}'.format(self._stmt_hdr))
 
-    def AddStmt(self, stmt, builder):
+    def AddStmt(self, stmt, builder, src_code_gen):
         builder.NewLine()
-        stmt._source_code(builder)
+        src_code_gen(stmt, builder)
 
     def EndStmts(self, builder):
         pass
 
 
-def GenVarDefsSourceCode(var_list, builder, formatter):
+def GenVarDefsSourceCode(var_list, builder, src_code_gen, formatter):
     formatter.BeginVarDefs(builder)
     for var in var_list:
-        formatter.AddVar(var, builder)
+        formatter.AddVar(var, builder, src_code_gen)
     formatter.EndVarDefs(builder)
 
 
-def GenStmtsSourceCode(stmt_list, builder, formatter):
+def GenStmtsSourceCode(stmt_list, builder, src_code_gen, formatter):
     formatter.BeginStmts(builder)
     for stmt in stmt_list:
-        formatter.AddStmt(stmt, builder)
+        formatter.AddStmt(stmt, builder, src_code_gen)
     formatter.EndStmts(builder)
 
 
-def GenProgramSourceCode(var_list, stmt_list, builder, formatter=None):
+def GenProgramSourceCode(var_list, stmt_list, builder, src_code_gen, formatter=None):
     formatter = formatter or DefaultProgramFormatter()
 
     formatter.BeginProgram(builder)
     with builder.Indent():
-        GenVarDefsSourceCode(var_list, builder, formatter)
-        GenStmtsSourceCode(stmt_list, builder, formatter)
+        GenVarDefsSourceCode(var_list, builder, src_code_gen, formatter)
+        GenStmtsSourceCode(stmt_list, builder, src_code_gen, formatter)
     formatter.EndProgram(builder)
 
 
-def GenApplySourceCode(method, operand_list, builder):
+def GenApplySourceCode(method, operand_list, builder, src_code_gen):
     builder.Append('(')
     builder.Append(method)
     for operand in operand_list:
-        operand._source_code(builder)
+        src_code_gen(operand, builder)
     builder.Append(')')

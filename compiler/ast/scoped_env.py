@@ -6,6 +6,7 @@ class ScopedEnvNode(object):
     '''
 
     def __init__(self):
+        # scope stack is implemented as a single linked list
         self._parent = None
 
     @property
@@ -31,6 +32,9 @@ class ScopedEnvNode(object):
 class ScopedEnv(object):
 
     def __init__(self, builder):
+        '''
+        builder: Creates a ScopedEnvNode object on each invocation of Build.
+        '''
         self._builder = builder
         self._top = builder.Build()
 
