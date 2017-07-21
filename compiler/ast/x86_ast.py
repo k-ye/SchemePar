@@ -374,6 +374,7 @@ class MacX86Formatter(object):
             lines = [
                 '.section    __TEXT,__text,regular,pure_instructions',
                 '.macosx_version_min 10, 12',
+                '',
                 '.globl  _main',
                 '.p2align    4, 0x90',
             ]
@@ -390,5 +391,6 @@ class MacX86Formatter(object):
                 node), builder, src_code_gen, program_fmt)
 
         # end
+        builder.NewLine()
         builder.NewLine()
         builder.Append('.subsections_via_symbols')
