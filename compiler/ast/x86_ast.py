@@ -9,6 +9,8 @@ X86_REG_NODE_T = 'reg'
 X86_DEREF_NODE_T = 'deref'
 X86_INSTR_NODE_T = 'instr'
 X86_LABEL_NODE_T = 'label'
+X86_PROLOGUE_NODE_T = 'prologue'
+X86_EPILOGUE_NODE_T = 'epilogue'
 
 _X86_P_FORMATTER = 'formatter'
 _X86_PROGRAM_P_STACK_SZ = 'stack_sz'
@@ -33,6 +35,7 @@ def _MakeX86ArgNode(type):
 
 def MakeX86ProgramNode(stack_sz, var_list, instr_list):
     node = _MakeX86Node(PROGRAM_NODE_T, _NODE_TC)
+    stack_sz = stack_sz if stack_sz < 0 else RoundupStackSize(stack_sz)
     SetProperty(node, _X86_PROGRAM_P_STACK_SZ, stack_sz)
     SetProperty(node, P_VAR_LIST, var_list)
     SetProperty(node, _X86_PROGRAM_P_INSTR_LIST, instr_list)
@@ -44,8 +47,13 @@ def GetX86ProgramStackSize(node):
     return GetProperty(node, _X86_PROGRAM_P_STACK_SZ)
 
 
+def RoundupStackSize(stack_sz):
+    return ((stack_sz + 15) / 16) * 16
+
+
 def SetX86ProgramStackSize(node, stack_sz):
     assert LangOf(node) == X86_LANG and TypeOf(node) == PROGRAM_NODE_T
+    stack_sz = RoundupStackSize(stack_sz)
     SetProperty(node, _X86_PROGRAM_P_STACK_SZ, stack_sz)
 
 
@@ -112,6 +120,22 @@ def SetX86Reg(node, reg):
     assert LangOf(node) == X86_LANG and TypeOf(
         node) in {X86_REG_NODE_T, X86_DEREF_NODE_T}
     setProperty(node, _X86_P_REG, reg)
+
+
+# X86 Prologue/Epilogue node are placeholders generated
+# during SelectionInstruction pass, because at that
+# time we don't know the real stack size yet.
+def MakeX86PrologueNode():
+    return _MakeX86Node(X86_PROLOGUE_NODE_T, _NODE_TC)
+
+
+def MakeX86EpilogueNode():
+    return _MakeX86Node(X86_EPILOGUE_NODE_T, _NODE_TC)
+
+
+def IsX86CallingConventionNode(node):
+    types = {X86_PROLOGUE_NODE_T, X86_EPILOGUE_NODE_T}
+    return LangOf(node) == X86_LANG and TypeOf(node) in types
 
 
 def MakeX86DerefNode(reg, offset):
@@ -186,8 +210,12 @@ class X86AstVisitorBase(object):
             result = self.VisitReg(node)
         elif ndtype == X86_DEREF_NODE_T:
             result = self.VisitDeref(node)
-        elif NODE_T == X86_LABEL_NODE_T:
+        elif ndtype == X86_LABEL_NODE_T:
             result = self.VisitLabel(node)
+        elif ndtype == X86_PROLOGUE_NODE_T:
+            result = self.VisitPrologue(node)
+        elif ndtype == X86_EPILOGUE_NODE_T:
+            result = self.VisitEpilogue(node)
         else:
             raise RuntimeError("Unknown X86 node type={}".format(ndtype))
         return result
@@ -211,6 +239,12 @@ class X86AstVisitorBase(object):
         return node
 
     def VisitLabel(self, node):
+        return node
+
+    def VisitPrologue(self, node):
+        return node
+
+    def VisitEpilogue(self, node):
         return node
 
 
@@ -262,6 +296,12 @@ class _X86SourceCodeVisitor(X86AstVisitorBase):
     def BuildSourceCode(self):
         return self._builder.Build()
 
+    def VisitPrologue(self, node):
+        self._builder.Append('( __prologue__ )')
+
+    def VisitEpilogue(self, node):
+        self._builder.Append('( __epilogue__ )')
+
 
 def X86SourceCode(node, formatter=None):
     visitor = _X86SourceCodeVisitor(formatter)
@@ -297,6 +337,9 @@ class MacX86Formatter(object):
     def _Reg(self, reg):
         return '%' + reg
 
+    def _Label(self, label):
+        return '_' + label
+
     def AddArg(self, t, var, builder):
         argstr = None
         if t == X86_DEREF_NODE_T:
@@ -307,7 +350,7 @@ class MacX86Formatter(object):
         elif t == X86_REG_NODE_T:
             argstr = self._Reg(var)
         elif t == X86_LABEL_NODE_T:
-            argstr = var
+            argstr = self._Label(var)
         else:
             raise RuntimeError('type={} var={}'.format(t, var))
         builder.Append(argstr, append_whitespace=False)
@@ -343,7 +386,8 @@ class MacX86Formatter(object):
         # instructions
         program_fmt = DefaultProgramFormatter(stmt_hdr='instructions')
         with builder.Indent(4):
-            GenStmtsSourceCode(GetX86ProgramInstrList(node), builder, src_code_gen, program_fmt)
+            GenStmtsSourceCode(GetX86ProgramInstrList(
+                node), builder, src_code_gen, program_fmt)
 
         # end
         builder.NewLine()

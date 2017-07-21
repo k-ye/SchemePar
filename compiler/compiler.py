@@ -248,7 +248,9 @@ class _IrToX86Builder(_LowLvPassBuilder):
         return MakeX86VarNode(var)
 
     def AddInstr(self, instr):
-        assert LangOf(instr) == X86_LANG and TypeOf(instr) == X86_INSTR_NODE_T
+        assert LangOf(instr) == X86_LANG
+        assert TypeOf(
+            instr) == X86_INSTR_NODE_T or IsX86CallingConventionNode(instr)
         super(_IrToX86Builder, self).AddStmt(instr)
 
     @property
@@ -271,8 +273,22 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
         return self._builder.GetX86Ast()
 
     def VisitProgram(self, node):
+        # prologue, this should be added later for all function call
+        self._builder.AddInstr(MakeX86PrologueNode())
         for stmt in GetNodeStmtList(node):
             self._Visit(stmt)
+
+        # call the runtime PrintPtr
+        # movq    %rax, %rdi
+        # callq   _PrintPtr
+        instr = MakeX86InstrNode(x86c.MOVE, MakeX86RegNode(
+            x86c.RAX), MakeX86RegNode(x86c.RDI))
+        self._builder.AddInstr(instr)
+        instr = MakeX86InstrNode(x86c.CALL, MakeX86LabelNode('print_ptr'))
+        self._builder.AddInstr(instr)
+        # epilogue, this should be added later for all function call
+        self._builder.AddInstr(MakeX86EpilogueNode())
+
         assert len(self._builder.var_list) == len(
             GetNodeVarList(node))
 
@@ -297,7 +313,8 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
         x86_instr = MakeX86InstrNode(
             x86c.MOVE, x86_arg, MakeX86RegNode(x86c.RAX))
         self._builder.AddInstr(x86_instr)
-        self._builder.AddInstr(MakeX86InstrNode(x86c.RET))
+        # let the calling convention epilogue handles the actual 'ret' instruction
+        # self._builder.AddInstr(MakeX86InstrNode(x86c.RET))
 
     def VisitInt(self, node):
         raise RuntimeError("Shouldn't get called")
@@ -374,18 +391,20 @@ This might be replaced by register allocation pass in the future
 def AssignHome(x86_ast):
     assert LangOf(x86_ast) == X86_LANG and TypeOf(x86_ast) == PROGRAM_NODE_T
     dword_sz = 8
-    stack_pos = -2 * dword_sz
+    stack_pos = 0
     var_stack_map = {}
     instr_list = GetX86ProgramInstrList(x86_ast)
     for i, instr in enumerate(instr_list):
+        if IsX86CallingConventionNode(instr):
+            continue
         operand_list = GetX86InstrOperandList(instr)
         for j, operand in enumerate(operand_list):
             if TypeOf(operand) == VAR_NODE_T:
                 # replace Var with Deref
                 var = GetNodeVar(operand)
                 if var not in var_stack_map:
-                    var_stack_map[var] = stack_pos
                     stack_pos -= dword_sz
+                    var_stack_map[var] = stack_pos
                 operand = MakeX86DerefNode(x86c.RBP, var_stack_map[var])
                 operand_list[j] = operand
         SetX86InstrOperandList(instr, operand_list)
@@ -406,11 +425,39 @@ are all memory references, or deref nodes.
 def PatchInstruction(x86_ast):
     assert LangOf(x86_ast) == X86_LANG and TypeOf(x86_ast) == PROGRAM_NODE_T
     instr_list = GetX86ProgramInstrList(x86_ast)
+    stack_sz = GetX86ProgramStackSize(x86_ast)
     # a instruction might be splitted into two, hence we need a new list.
     new_instr_list = []
     for instr in instr_list:
         has_appended = False
-        if GetX86InstrArity(instr) == 2:
+        if TypeOf(instr) == X86_PROLOGUE_NODE_T:
+            # pushq   %rbp
+            # movq    %rsp, %rbp
+            # subq    $16, %rsp
+            prologue = MakeX86InstrNode(x86c.PUSH, MakeX86RegNode(x86c.RBP))
+            new_instr_list.append(prologue)
+            prologue = MakeX86InstrNode(x86c.MOVE, MakeX86RegNode(
+                x86c.RSP), MakeX86RegNode(x86c.RBP))
+            new_instr_list.append(prologue)
+            if stack_sz > 0:
+                prologue = MakeX86InstrNode(x86c.SUB, MakeX86IntNode(
+                    stack_sz), MakeX86RegNode(x86c.RSP))
+                new_instr_list.append(prologue)
+            has_appended = True
+        elif TypeOf(instr) == X86_EPILOGUE_NODE_T:
+            # addq    $16, %rsp
+            # popq    %rbp
+            # retq
+            if stack_sz > 0:
+                prologue = MakeX86InstrNode(x86c.ADD, MakeX86IntNode(
+                    stack_sz), MakeX86RegNode(x86c.RSP))
+                new_instr_list.append(prologue)
+            epilogue = MakeX86InstrNode(x86c.POP, MakeX86RegNode(x86c.RBP))
+            new_instr_list.append(epilogue)
+            epilogue = MakeX86InstrNode(x86c.RET)
+            new_instr_list.append(epilogue)
+            has_appended = True
+        elif GetX86InstrArity(instr) == 2:
             op1, op2 = GetX86InstrOperandList(instr)
             if TypeOf(op1) == X86_DEREF_NODE_T and TypeOf(op2) == X86_DEREF_NODE_T:
                 tmp_ref = MakeX86RegNode(x86c.RAX)

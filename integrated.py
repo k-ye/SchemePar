@@ -18,9 +18,11 @@ if __name__ == '__main__':
     ; 42
     '''
     # test_data = '(let ([x 42]) (let ([y x]) y))'
+    input_filename = None
     if len(sys.argv) > 1:
+        input_filename = sys.argv[1]
         lines = []
-        with open(sys.argv[1], 'r') as rf:
+        with open(input_filename, 'r') as rf:
             for line in rf:
                 lines.append(line)
         test_data = ''.join(lines)
@@ -51,4 +53,14 @@ if __name__ == '__main__':
     x86_ast = PatchInstruction(x86_ast)
     PrintSourceCode('X86 (Patch Instructions)', X86SourceCode(x86_ast))
 
-    PrintSourceCode('X86 (Assembly)', GenerateX86(x86_ast))
+    x86_src_code = GenerateX86(x86_ast)
+    PrintSourceCode('X86 (Assembly)', x86_src_code)
+
+    if input_filename is not None:
+        import os
+        output_filename = os.path.basename(input_filename)
+        output_filename = os.path.splitext(output_filename)[0] + '.s'
+        output_filename = os.path.join('runtime', output_filename)
+        with open(output_filename, 'w') as wf:
+            wf.write(x86_src_code)
+            wf.write('\n')
