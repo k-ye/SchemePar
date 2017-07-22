@@ -17,6 +17,19 @@ if __name__ == '__main__':
     )
     ; 42
     '''
+    test_data = '''
+    (let ([v 1])
+        (let ([w 46])
+            (let ([x (+ v 7)]) 
+                (let ([y (+ 4 x)]) 
+                    (let ([z (+ x w)])
+                        (+ z (- y))
+                    )
+                )
+            )
+        )
+    )
+    '''
     # test_data = '(let ([x 42]) (let ([y x]) y))'
     input_filename = None
     if len(sys.argv) > 1:
@@ -43,15 +56,25 @@ if __name__ == '__main__':
 
     ir_ast = Flatten(sch_ast)
     PrintSourceCode('IR source code', IrSourceCode(ir_ast))
-    
-    x86_ast = SelectInstruction(ir_ast)
-    PrintSourceCode('X86 (Select Instruction)', X86SourceCode(x86_ast))
 
-    x86_ast = AssignHome(x86_ast)
-    PrintSourceCode('X86 (Assign Home)', X86SourceCode(x86_ast))
+    x86_formatter = X86InternalFormatter()
+    x86_ast = SelectInstruction(ir_ast)
+    PrintSourceCode('X86 (Select Instruction)',
+                    X86SourceCode(x86_ast, x86_formatter))
+
+    x86_ast = UncoverLive(x86_ast)
+    x86_formatter.include_live_afters = True
+    PrintSourceCode('X86 (Uncover Live)',
+                    X86SourceCode(x86_ast, x86_formatter))
+
+    x86_ast = AllocateRegisterOrStack(x86_ast)
+    x86_formatter.include_live_afters = False
+    PrintSourceCode('X86 (Allocate Register or Stack)',
+                    X86SourceCode(x86_ast, x86_formatter))
 
     x86_ast = PatchInstruction(x86_ast)
-    PrintSourceCode('X86 (Patch Instructions)', X86SourceCode(x86_ast))
+    PrintSourceCode('X86 (Patch Instructions)',
+                    X86SourceCode(x86_ast, x86_formatter))
 
     x86_src_code = GenerateX86(x86_ast)
     PrintSourceCode('X86 (Assembly)', x86_src_code)

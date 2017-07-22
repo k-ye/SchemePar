@@ -9,12 +9,23 @@ X86_REG_NODE_T = 'reg'
 X86_DEREF_NODE_T = 'deref'
 X86_INSTR_NODE_T = 'instr'
 X86_LABEL_NODE_T = 'label'
-X86_PROLOGUE_NODE_T = 'prologue'
-X86_EPILOGUE_NODE_T = 'epilogue'
+X86_CALLC_NODE_T = 'calling_convention'
+X86_SI_RET_NODE_T = 'select_instr_ret'
+# X86_PROLOGUE_NODE_T = 'prologue'
+# X86_EPILOGUE_NODE_T = 'epilogue'
+
+_X86_CALLC_P_LOGUE = 'logue_type'
+X86_CALLC_PROLOGUE = 'prologue'
+X86_CALLC_EPILOGUE = 'epilogue'
+
+_X86_SI_RET_P_FROM_FUNC = 'from_func'
+_X86_SI_RET_P_ARG = 'ret_arg'
+
 
 _X86_P_FORMATTER = 'formatter'
 _X86_PROGRAM_P_STACK_SZ = 'stack_sz'
 _X86_PROGRAM_P_INSTR_LIST = 'instr_list'
+_X86_PROGRAM_P_LIVE = 'live_afters'
 _X86_INSTR_P_INSTR = 'instr'
 _X86_INSTR_P_OPERAND_LIST = 'operand_list'
 _X86_P_REG = 'reg'
@@ -33,17 +44,26 @@ def _MakeX86ArgNode(type):
     return _MakeX86Node(type, _ARG_TC)
 
 
+def IsX86Node(node):
+    return LangOf(node) == X86_LANG
+
+
 def MakeX86ProgramNode(stack_sz, var_list, instr_list):
     node = _MakeX86Node(PROGRAM_NODE_T, _NODE_TC)
     stack_sz = stack_sz if stack_sz < 0 else RoundupStackSize(stack_sz)
     SetProperty(node, _X86_PROGRAM_P_STACK_SZ, stack_sz)
     SetProperty(node, P_VAR_LIST, var_list)
     SetProperty(node, _X86_PROGRAM_P_INSTR_LIST, instr_list)
+    SetProperty(node, _X86_PROGRAM_P_LIVE, [])
     return node
 
 
+def IsX86ProgramNode(node):
+    return IsX86Node(node) and TypeOf(node) == PROGRAM_NODE_T
+
+
 def GetX86ProgramStackSize(node):
-    assert LangOf(node) == X86_LANG and TypeOf(node) == PROGRAM_NODE_T
+    assert IsX86ProgramNode(node)
     return GetProperty(node, _X86_PROGRAM_P_STACK_SZ)
 
 
@@ -52,19 +72,29 @@ def RoundupStackSize(stack_sz):
 
 
 def SetX86ProgramStackSize(node, stack_sz):
-    assert LangOf(node) == X86_LANG and TypeOf(node) == PROGRAM_NODE_T
+    assert IsX86ProgramNode(node)
     stack_sz = RoundupStackSize(stack_sz)
     SetProperty(node, _X86_PROGRAM_P_STACK_SZ, stack_sz)
 
 
 def GetX86ProgramInstrList(node):
-    assert LangOf(node) == X86_LANG and TypeOf(node) == PROGRAM_NODE_T
+    assert IsX86ProgramNode(node)
     return GetProperty(node, _X86_PROGRAM_P_INSTR_LIST)
 
 
 def SetX86ProgramInstrList(node, instr_list):
-    assert LangOf(node) == X86_LANG and TypeOf(node) == PROGRAM_NODE_T
+    assert IsX86ProgramNode(node)
     SetProperty(node, _X86_PROGRAM_P_INSTR_LIST, instr_list)
+
+
+def GetX86ProgramLiveAfters(node):
+    assert IsX86ProgramNode(node)
+    return GetProperty(node, _X86_PROGRAM_P_LIVE)
+
+
+def SetX86ProgramLiveAfters(node, live_afters):
+    assert IsX86ProgramNode(node)
+    SetProperty(node, _X86_PROGRAM_P_LIVE, live_afters)
 
 
 def MakeX86InstrNode(instr, *operands):
@@ -74,23 +104,27 @@ def MakeX86InstrNode(instr, *operands):
     return node
 
 
+def IsX86InstrNode(node):
+    return IsX86Node(node) and TypeOf(node) == X86_INSTR_NODE_T
+
+
 def GetX86Instr(node):
-    assert LangOf(node) == X86_LANG and TypeOf(node) == X86_INSTR_NODE_T
+    assert IsX86InstrNode(node), TypeOf(node)
     return GetProperty(node, _X86_INSTR_P_INSTR)
 
 
 def SetX86Instr(node, instr):
-    assert LangOf(node) == X86_LANG and TypeOf(node) == X86_INSTR_NODE_T
+    assert IsX86InstrNode(node), TypeOf(node)
     SetProperty(node, _X86_INSTR_P_INSTR, instr)
 
 
 def GetX86InstrOperandList(node):
-    assert LangOf(node) == X86_LANG and TypeOf(node) == X86_INSTR_NODE_T
+    assert IsX86InstrNode(node), TypeOf(node)
     return GetProperty(node, _X86_INSTR_P_OPERAND_LIST)
 
 
 def SetX86InstrOperandList(node, operand_list):
-    assert LangOf(node) == X86_LANG and TypeOf(node) == X86_INSTR_NODE_T
+    assert IsX86InstrNode(node), TypeOf(node)
     SetProperty(node, _X86_INSTR_P_OPERAND_LIST, operand_list)
 
 
@@ -104,10 +138,18 @@ def MakeX86IntNode(x):
     return node
 
 
+def IsX86IntNode(node):
+    return IsX86Node(node) and TypeOf(node) == INT_NODE_T
+
+
 def MakeX86RegNode(reg):
     node = _MakeX86ArgNode(X86_REG_NODE_T)
     SetProperty(node, _X86_P_REG, reg)
     return node
+
+
+def IsX86RegNode(node):
+    return IsX86Node(node) and TypeOf(node) == X86_REG_NODE_T
 
 
 def GetX86Reg(node):
@@ -119,23 +161,7 @@ def GetX86Reg(node):
 def SetX86Reg(node, reg):
     assert LangOf(node) == X86_LANG and TypeOf(
         node) in {X86_REG_NODE_T, X86_DEREF_NODE_T}
-    setProperty(node, _X86_P_REG, reg)
-
-
-# X86 Prologue/Epilogue node are placeholders generated
-# during SelectionInstruction pass, because at that
-# time we don't know the real stack size yet.
-def MakeX86PrologueNode():
-    return _MakeX86Node(X86_PROLOGUE_NODE_T, _NODE_TC)
-
-
-def MakeX86EpilogueNode():
-    return _MakeX86Node(X86_EPILOGUE_NODE_T, _NODE_TC)
-
-
-def IsX86CallingConventionNode(node):
-    types = {X86_PROLOGUE_NODE_T, X86_EPILOGUE_NODE_T}
-    return LangOf(node) == X86_LANG and TypeOf(node) in types
+    SetProperty(node, _X86_P_REG, reg)
 
 
 def MakeX86DerefNode(reg, offset):
@@ -143,6 +169,10 @@ def MakeX86DerefNode(reg, offset):
     SetProperty(node, _X86_P_REG, reg)
     SetProperty(node, _X86_DEREF_P_OFFSET, offset)
     return node
+
+
+def IsX86DerefNode(node):
+    return IsX86Node(node) and TypeOf(node) == X86_DEREF_NODE_T
 
 
 def GetX86DerefOffset(node):
@@ -161,6 +191,10 @@ def MakeX86VarNode(var):
     return node
 
 
+def IsX86VarNode(node):
+    return IsX86Node(node) and TypeOf(node) == VAR_NODE_T
+
+
 def MakeX86LabelNode(label):
     node = _MakeX86ArgNode(X86_LABEL_NODE_T)
     SetProperty(node, _X86_LABEL_P_LABEL, label)
@@ -175,6 +209,64 @@ def GetX86Label(node):
 def SetX86Label(node, label):
     assert LangOf(node) == X86_LANG and TypeOf(node) == X86_LABEL_NODE_T
     SetProperty(node, _X86_LABEL_P_LABEL, label)
+
+
+# X86 Prologue/Epilogue node are placeholders generated
+# during SelectionInstruction pass, because at that
+# time we don't know the real stack size yet.
+
+
+def MakeX86CallCNode(logue):
+    assert logue in {X86_CALLC_PROLOGUE, X86_CALLC_EPILOGUE}
+    node = _MakeX86Node(X86_CALLC_NODE_T, _NODE_TC)
+    SetProperty(node, _X86_CALLC_P_LOGUE, logue)
+    return node
+
+
+def IsX86CallCNode(node):
+    return IsX86Node(node) and TypeOf(node) == X86_CALLC_NODE_T
+
+
+def GetX86CallCLogue(node):
+    assert IsX86CallCNode(node)
+    return GetProperty(node, _X86_CALLC_P_LOGUE)
+
+
+def MakeX86SiRetNode(from_func, ret_arg):
+    assert ParentOf(ret_arg).type == ARG_NODE_T
+    node = _MakeX86Node(X86_SI_RET_NODE_T, _NODE_TC)
+    SetProperty(node, _X86_SI_RET_P_FROM_FUNC, from_func)
+    SetProperty(node, _X86_SI_RET_P_ARG, ret_arg)
+    return node
+
+
+def IsX86SiRetNode(node):
+    return IsX86Node(node) and TypeOf(node) == X86_SI_RET_NODE_T
+
+
+def GetX86SiRetFromFunc(node):
+    assert IsX86SiRetNode(node)
+    return GetProperty(node, _X86_SI_RET_P_FROM_FUNC)
+
+
+def SetX86SiRetFromFunc(node, from_func):
+    assert IsX86SiRetNode(node)
+    SetProperty(node, _X86_SI_RET_P_FROM_FUNC, from_func)
+
+
+def GetX86SiRetArg(node):
+    assert IsX86SiRetNode(node)
+    return GetProperty(node, _X86_SI_RET_P_ARG)
+
+
+def SetX86SiRetArg(node, ret_arg):
+    assert IsX86SiRetNode(node)
+    assert ParentOf(ret_arg).type == ARG_NODE_T
+    SetProperty(node, _X86_SI_RET_P_ARG, ret_arg)
+
+
+def IsX86SpecialInstrNode(node):
+    return IsX86CallCNode(node) or IsX86SiRetNode(node)
 
 
 ''' X86 Ast Node Visitor
@@ -195,7 +287,8 @@ class X86AstVisitorBase(object):
         return visit_result
 
     def _Visit(self, node):
-        assert LangOf(node) == X86_LANG
+        assert LangOf(node) == X86_LANG, \
+            'lang={}, type={}, node={}'.format(LangOf(node), TypeOf(node), str(node))
         ndtype = TypeOf(node)
         result = None
         if ndtype == PROGRAM_NODE_T:
@@ -212,10 +305,10 @@ class X86AstVisitorBase(object):
             result = self.VisitDeref(node)
         elif ndtype == X86_LABEL_NODE_T:
             result = self.VisitLabel(node)
-        elif ndtype == X86_PROLOGUE_NODE_T:
-            result = self.VisitPrologue(node)
-        elif ndtype == X86_EPILOGUE_NODE_T:
-            result = self.VisitEpilogue(node)
+        elif ndtype == X86_CALLC_NODE_T:
+            result = self.VisitCallC(node)
+        elif ndtype == X86_SI_RET_NODE_T:
+            result = self.VisitSiRet(node)
         else:
             raise RuntimeError("Unknown X86 node type={}".format(ndtype))
         return result
@@ -241,10 +334,10 @@ class X86AstVisitorBase(object):
     def VisitLabel(self, node):
         return node
 
-    def VisitPrologue(self, node):
+    def VisitCallC(self, node):
         return node
 
-    def VisitEpilogue(self, node):
+    def VisitSiRet(self, node):
         return node
 
 
@@ -252,7 +345,7 @@ class _X86SourceCodeVisitor(X86AstVisitorBase):
 
     def __init__(self, formatter):
         super(_X86SourceCodeVisitor, self).__init__()
-        self._formatter = formatter or _X86InternalFormatter()
+        self._formatter = formatter
 
     def _BeginVisit(self):
         self._builder = AstSourceCodeBuilder()
@@ -293,23 +386,32 @@ class _X86SourceCodeVisitor(X86AstVisitorBase):
     def VisitLabel(self, node):
         return self._VisitArg(node, GetX86Label(node))
 
+    def VisitCallC(self, node):
+        logue = GetX86CallCLogue(node)
+        self._builder.Append('( __{}__ )'.format(logue))
+
+    def VisitSiRet(self, node):
+        from_func = GetX86SiRetFromFunc(node)
+        hdr = 'si_ret' if from_func else 'program_si_ret'
+        self._builder.Append('( __{}__'.format(hdr))
+        ret_arg = GetX86SiRetArg(node)
+        self._Visit(ret_arg)
+        self._builder.Append(')')
+
     def BuildSourceCode(self):
         return self._builder.Build()
 
-    def VisitPrologue(self, node):
-        self._builder.Append('( __prologue__ )')
 
-    def VisitEpilogue(self, node):
-        self._builder.Append('( __epilogue__ )')
-
-
-def X86SourceCode(node, formatter=None):
+def X86SourceCode(node, formatter):
     visitor = _X86SourceCodeVisitor(formatter)
     visitor.Visit(node)
     return visitor.BuildSourceCode()
 
 
-class _X86InternalFormatter(object):
+class X86InternalFormatter(object):
+
+    def __init__(self, include_live_afters=False):
+        self.include_live_afters = include_live_afters
 
     def AddArg(self, t, var, builder):
         if t == X86_DEREF_NODE_T:
@@ -321,11 +423,26 @@ class _X86InternalFormatter(object):
         GenApplySourceCode(instr, operand_list, builder, src_code_gen)
 
     def FormatProgram(self, node, builder, src_code_gen):
-        program_fmt = DefaultProgramFormatter(stmt_hdr='instructions')
+        # variable definitions
+        builder.NewLine()
+        builder.Append('# variables')
         var_list = GetNodeVarList(node)
+        for var in var_list:
+            src_code_gen(var, builder)
+        # instructions + live afters
+        builder.NewLine()
+        builder.NewLine()
+        builder.Append('# instructions')
         instr_list = GetX86ProgramInstrList(node)
-        GenProgramSourceCode(
-            var_list, instr_list, builder, src_code_gen, program_fmt)
+        live_afters = GetX86ProgramLiveAfters(node)
+        len_live_afters = len(live_afters)
+        for i, instr in enumerate(instr_list):
+            builder.NewLine()
+            src_code_gen(instr, builder)
+            if self.include_live_afters and i < len_live_afters:
+                la = live_afters[i]
+                la_str = ', '.join(la)
+                builder.Append('( { %s } )' % la_str)
 
 
 class MacX86Formatter(object):

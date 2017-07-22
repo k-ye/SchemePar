@@ -6,6 +6,7 @@ from ast.sch_ast import *
 from ast.ir_ast import *
 from ast.x86_ast import *
 import x86_const as x86c
+from utils import *
 
 
 class CompilingError(Exception):
@@ -155,6 +156,12 @@ class _LowLvPassBuilder(object):
     def AddStmt(self, stmt):
         self._stmt_list.append(stmt)
 
+    def GetStmt(self, index):
+        return self._stmt_list[index]
+
+    def ChangeStmt(self, index, stmt):
+        self._stmt_list[index] = stmt
+
 
 ''' Flatten pass
 This pass flattens an Scheme AST to an equivalent IR AST
@@ -249,8 +256,7 @@ class _IrToX86Builder(_LowLvPassBuilder):
 
     def AddInstr(self, instr):
         assert LangOf(instr) == X86_LANG
-        assert TypeOf(
-            instr) == X86_INSTR_NODE_T or IsX86CallingConventionNode(instr)
+        assert IsX86InstrNode(instr) or IsX86SpecialInstrNode(instr)
         super(_IrToX86Builder, self).AddStmt(instr)
 
     @property
@@ -274,20 +280,25 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
 
     def VisitProgram(self, node):
         # prologue, this should be added later for all function call
-        self._builder.AddInstr(MakeX86PrologueNode())
+        self._builder.AddInstr(MakeX86CallCNode(X86_CALLC_PROLOGUE))
         for stmt in GetNodeStmtList(node):
             self._Visit(stmt)
 
         # call the runtime PrintPtr
         # movq    %rax, %rdi
         # callq   _PrintPtr
-        instr = MakeX86InstrNode(x86c.MOVE, MakeX86RegNode(
-            x86c.RAX), MakeX86RegNode(x86c.RDI))
-        self._builder.AddInstr(instr)
-        instr = MakeX86InstrNode(x86c.CALL, MakeX86LabelNode('print_ptr'))
-        self._builder.AddInstr(instr)
+        last_stmt = self._builder.GetStmt(-1)
+        assert IsX86SiRetNode(last_stmt)
+        SetX86SiRetFromFunc(last_stmt, False)  # return from program
+        self._builder.ChangeStmt(-1, last_stmt)
+        # instr = MakeX86InstrNode(x86c.MOVE, MakeX86RegNode(
+        #     x86c.RAX), MakeX86RegNode(x86c.RDI))
+        # self._builder.AddInstr(instr)
+        # instr = MakeX86InstrNode(x86c.CALL, MakeX86LabelNode('print_ptr'))
+        # self._builder.AddInstr(instr)
+
         # epilogue, this should be added later for all function call
-        self._builder.AddInstr(MakeX86EpilogueNode())
+        self._builder.AddInstr(MakeX86CallCNode(X86_CALLC_EPILOGUE))
 
         assert len(self._builder.var_list) == len(
             GetNodeVarList(node))
@@ -310,11 +321,11 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
     def VisitReturn(self, node):
         x86_arg = self._MakeX86ArgNode(GetIrReturnArg(node))
         # return value goes to %rax
-        x86_instr = MakeX86InstrNode(
-            x86c.MOVE, x86_arg, MakeX86RegNode(x86c.RAX))
+        from_func = True
+        x86_instr = MakeX86SiRetNode(from_func, x86_arg)
         self._builder.AddInstr(x86_instr)
-        # let the calling convention epilogue handles the actual 'ret' instruction
-        # self._builder.AddInstr(MakeX86InstrNode(x86c.RET))
+        # let the calling convention epilogue handles the actual 'ret'
+        # instruction
 
     def VisitInt(self, node):
         raise RuntimeError("Shouldn't get called")
@@ -383,36 +394,332 @@ def SelectInstruction(ir_ast, formatter=None):
     visitor = _SelectInstructionVisitor()
     return visitor.Visit(ir_ast)
 
-'''Assign-Home pass
-This might be replaced by register allocation pass in the future
+
+'''Uncover-Live pass
+This pass detects the live after set for all the X86 instructions
 '''
 
 
-def AssignHome(x86_ast):
-    assert LangOf(x86_ast) == X86_LANG and TypeOf(x86_ast) == PROGRAM_NODE_T
-    dword_sz = 8
-    stack_pos = 0
-    var_stack_map = {}
+def _AddVarNamesToSet(var_names, operand_list):
+    for op in filter(lambda o: TypeOf(o) == VAR_NODE_T, operand_list):
+        var_names.add(GetNodeVar(op))
+
+
+# The following helper functions only deal with *variables*.
+# That is, although a CALL instruction will potentionally pollute
+# all the caller-save registers (rax, rdx, ...), these registers
+# will not be included in the result set.
+
+
+def _ReadVariableSet(node):
+    if IsX86CallCNode(node):
+        return set()
+    result, arg_list = set(), []
+    if IsX86SiRetNode(node):
+        arg_list.append(GetX86SiRetArg(node))
+    else:
+        operand_list = GetX86InstrOperandList(node)
+        arity = GetX86InstrArity(node)
+        arg_list.extend(operand_list[:(arity - 1)])
+        # Instructions that read *destination*, hence MOVE is not here.
+        # TODO: think about whether PUSH should also be here.
+        instrs_read_dst = {x86c.ADD, x86c.NEG, x86c.SUB}
+        if GetX86Instr(node) in instrs_read_dst:
+            # must pass in a list
+            arg_list.append(operand_list[-1])
+    _AddVarNamesToSet(result, arg_list)
+    return result
+
+
+def _WrittenVariableSet(node):
+    if IsX86SpecialInstrNode(node):
+        return set()
+
+    result = set()
+    operand_list = GetX86InstrOperandList(node)
+    instrs_write = {x86c.ADD, x86c.NEG, x86c.SUB, x86c.MOVE}
+    if GetX86Instr(node) in instrs_write:
+        # instruction only writes to dst
+        _AddVarNamesToSet(result, operand_list[-1:])
+    return result
+
+
+def _UncoverLive(instr_list):
+    num_instr = len(instr_list)
+    live_afters = [set() for _ in xrange(num_instr)]
+    for i in reversed(xrange(1, num_instr)):
+        instr = instr_list[i]
+        # L_a(i)
+        la_i = live_afters[i]
+        # L_b(i) == L_a(i - 1)
+        lb_i = (la_i - _WrittenVariableSet(instr)) | _ReadVariableSet(instr)
+        live_afters[i - 1] = lb_i
+    return live_afters
+
+
+def UncoverLive(x86_ast):
+    assert IsX86ProgramNode(x86_ast)
+    instr_list = GetX86ProgramInstrList(x86_ast)
+    live_afters = _UncoverLive(instr_list)
+    SetX86ProgramLiveAfters(x86_ast, live_afters)
+    return x86_ast
+
+
+''' Build Interference Graph
+'''
+
+
+class _InferenceGraph(object):
+
+    def __init__(self):
+        self._ug = UGraph()
+        self._var_to_node = {}
+        self._var_saturation = {}
+
+    def AddVar(self, node):
+        assert IsX86VarNode(node)
+        var_name = GetNodeVar(node)
+        self._ug.AddVertex(var_name)
+        self._var_to_node[var_name] = node
+        self._var_saturation[var_name] = set()
+
+    def AddInterference(self, u_name, v_name):
+        self._ug.AddEdge(u_name, v_name)
+
+    def Interfered(self, var_name):
+        return {a for a in self._ug.AdjacentVertices(var_name)}
+
+    def LocRepr(self, loc):
+        assert IsX86RegNode(loc)
+        return GetX86Reg(loc)
+
+    def AddSaturation(self, var_name, loc):
+        if IsX86DerefNode(loc):
+            return
+        self._var_saturation[var_name].add(self.LocRepr(loc))
+
+
+def _BuildInterferenceGraph(x86_ast):
+    ig = _InferenceGraph()
+    for var in GetNodeVarList(x86_ast):
+        ig.AddVar(var)
+
+    instr_list = GetX86ProgramInstrList(x86_ast)
+    live_afters = _UncoverLive(instr_list)
+    assert len(instr_list) == len(live_afters)
+    for i, instr in enumerate(instr_list):
+        if IsX86CallCNode(instr):
+            continue
+        la_i = live_afters[i]
+        if IsX86SiRetNode(instr):
+            for v_name in la_i:
+                ig.AddSaturation(v_name, MakeX86RegNode(x86c.RAX))
+        else:
+            method = GetX86Instr(instr)
+            if method == x86c.MOVE:
+                src, dst = GetX86InstrOperandList(instr)
+                dst_name = GetNodeVar(dst)
+                not_interfered = {dst_name}
+                if IsX86VarNode(src):
+                    not_interfered.add(GetNodeVar(src))
+                for v_name in la_i:
+                    if v_name not in not_interfered:
+                        ig.AddInterference(dst_name, v_name)
+            elif method in {x86c.ADD, x86c.SUB, x86c.NEG}:
+                dst = GetX86InstrOperandList(instr)[-1]
+                dst_name = GetNodeVar(dst)
+                for v_name in la_i:
+                    if v_name != dst_name:
+                        ig.AddInterference(dst_name, v_name)
+            elif method == x86c.CALL:
+                for v_name in la_i:
+                    for cs_reg in x86c.CallerSaveRegs():
+                        cs_reg = MakeX86RegNode(cs_reg)
+                        ig.AddSaturation(v_name, cs_reg)
+    return ig
+
+
+class _MoveRelatedGraph(object):
+
+    def __init__(self):
+        self._ug = UGraph()
+        self._var_to_node = {}
+
+    def AddVar(self, node):
+        assert IsX86VarNode(node)
+        var_name = GetNodeVar(node)
+        self._ug.AddVertex(var_name)
+        self._var_to_node[var_name] = node
+
+    def AddMoveRelated(self, u_name, v_name):
+        self._ug.AddEdge(u_name, v_name)
+
+    def MoveRelated(self, var_name):
+        return {m for m in self._ug.AdjacentVertices(var_name)}
+
+
+def _BuildMoveRelatedGraph(x86_ast):
+    mrg = _MoveRelatedGraph()
+    for var in GetNodeVarList(x86_ast):
+        mrg.AddVar(var)
+    instr_list = GetX86ProgramInstrList(x86_ast)
+    for instr in instr_list:
+        if TypeOf(instr) == X86_INSTR_NODE_T and \
+                GetX86Instr(instr) == x86c.MOVE:
+            src, dst = GetX86InstrOperandList(instr)
+            assert IsX86VarNode(dst)
+            # it could be that |src| is an X86IntNode
+            if IsX86VarNode(src):
+                src_name, dst_name = GetNodeVar(src), GetNodeVar(dst)
+                mrg.AddMoveRelated(src_name, dst_name)
+    return mrg
+
+
+def _AllocateRegisterOrStack(ig, mrg, use_mr):
+    # a set the names of the variables not assigned a loc
+    unassigned_var_names = set(ig._var_to_node.keys())
+    # a mapping from var name to loc X86 node
+    var_assigned_loc = {}
+
+    free_regs = {r for r in x86c.FreeRegs()}
+    stack_pos, dword_sz = 0, 8
+
+    def TopUnassignedVar():
+        curmax, chosen = -1, None
+        for uv in unassigned_var_names:
+            len_var_sat = len(ig._var_saturation[uv])
+            if len_var_sat > curmax:
+                curmax, chosen = len_var_sat, uv
+        return uv
+
+    def TryMoveRelatedRegister(uv, uv_sat, interfered):
+        move_related = mrg.MoveRelated(uv) - interfered
+        for mr in move_related:
+            if mr in var_assigned_loc:
+                maybe_loc = var_assigned_loc[mr]
+                if IsX86RegNode(maybe_loc) and \
+                        ig.LocRepr(maybe_loc) not in uv_sat:
+                    return maybe_loc
+        return None
+
+    while len(unassigned_var_names):
+        uv = TopUnassignedVar()
+        uv_sat = ig._var_saturation[uv]
+        interfered = ig.Interfered(uv)
+        loc = TryMoveRelatedRegister(
+            uv, uv_sat, interfered) if use_mr else None
+        if loc is None:
+            selectable_regs = list(free_regs - uv_sat)
+            if len(selectable_regs):
+                # select a register
+                reg_name = selectable_regs[0]
+                loc = MakeX86RegNode(reg_name)
+            else:
+                # select a stack position
+                stack_pos -= dword_sz
+                loc = MakeX86DerefNode(x86c.RBP, stack_pos)
+        var_assigned_loc[uv] = loc
+        for iv in interfered:
+            ig.AddSaturation(iv, loc)
+        unassigned_var_names.remove(uv)
+    stack_sz = -stack_pos  # be verbose about what is returned.
+    for var, loc in var_assigned_loc.iteritems():
+        loc_str = None
+        if IsX86RegNode(loc):
+            loc_str = '( reg %{} )'.format(GetX86Reg(loc))
+        else:
+            loc_str = '( deref {}(%{}) )'.format(
+                GetX86DerefOffset(loc), GetX86Reg(loc))
+        print('var={}, loc={}'.format(var, loc_str))
+    return var_assigned_loc, stack_sz
+
+
+def _ReplaceX86SiRets(x86_ast):
+    # Can do nothing about pro/epilogue now because we don't know the
+    # stack size yet.
+    new_instr_list = []
+    for instr in GetX86ProgramInstrList(x86_ast):
+        if IsX86SiRetNode(instr):
+            from_func = GetX86SiRetFromFunc(instr)
+            ret_arg = GetX86SiRetArg(instr)
+            if from_func:
+                instr = MakeX86InstrNode(
+                    x86c.MOVE, ret_arg, MakeX86RegNode(x86c.RAX))
+                new_instr_list.append(instr)
+            else:
+                instr = MakeX86InstrNode(
+                    x86c.MOVE, ret_arg, MakeX86RegNode(x86c.RDI))
+                new_instr_list.append(instr)
+                instr = MakeX86InstrNode(
+                    x86c.CALL, MakeX86LabelNode('print_ptr'))
+                new_instr_list.append(instr)
+                instr = MakeX86InstrNode(
+                    x86c.MOVE, MakeX86IntNode(0), MakeX86RegNode(x86c.RAX))
+                # instr = MakeX86InstrNode(
+                #     'xor', MakeX86RegNode(x86c.RAX), MakeX86RegNode(x86c.RAX))
+                new_instr_list.append(instr)
+
+        else:
+            new_instr_list.append(instr)
+    SetX86ProgramInstrList(x86_ast, new_instr_list)
+    return x86_ast
+
+
+def _RemoveSameMov(instr_list):
+    def AreSrcDstSame(src, dst):
+        stype, dtype = TypeOf(src), TypeOf(dst)
+        if stype != dtype:
+            return False
+        if stype not in {X86_REG_NODE_T, X86_DEREF_NODE_T}:
+            return False
+
+        sreg, dreg = GetX86Reg(src), GetX86Reg(dst)
+        if sreg != dreg:
+            return False
+        if stype == X86_DEREF_NODE_T:
+            return GetX86DerefOffset(src) == GetX86DerefOffset(dst)
+        return True
+
+    new_instr_list = []
+    for i, instr in enumerate(instr_list):
+        if IsX86InstrNode(instr) and GetX86Instr(instr) == x86c.MOVE:
+            src, dst = GetX86InstrOperandList(instr)
+            if AreSrcDstSame(src, dst):
+                continue
+        new_instr_list.append(instr)
+    return new_instr_list
+
+
+def AllocateRegisterOrStack(x86_ast, use_mr=True, rm_same_mov=True):
+    assert IsX86ProgramNode(x86_ast)
+
+    ig = _BuildInterferenceGraph(x86_ast)
+    mrg = _BuildMoveRelatedGraph(x86_ast)
+    # mrg = None
+    x86_ast = _ReplaceX86SiRets(x86_ast)
+
+    var_assigned_loc, stack_sz = _AllocateRegisterOrStack(ig, mrg, use_mr)
+    assert len(var_assigned_loc) == len(GetNodeVarList(x86_ast))
     instr_list = GetX86ProgramInstrList(x86_ast)
     for i, instr in enumerate(instr_list):
-        if IsX86CallingConventionNode(instr):
+        if IsX86CallCNode(instr):
             continue
         operand_list = GetX86InstrOperandList(instr)
         for j, operand in enumerate(operand_list):
             if TypeOf(operand) == VAR_NODE_T:
-                # replace Var with Deref
-                var = GetNodeVar(operand)
-                if var not in var_stack_map:
-                    stack_pos -= dword_sz
-                    var_stack_map[var] = stack_pos
-                operand = MakeX86DerefNode(x86c.RBP, var_stack_map[var])
-                operand_list[j] = operand
+                # replace Var with Reg/Deref
+                var_name = GetNodeVar(operand)
+                loc = var_assigned_loc[var_name]
+                operand_list[j] = loc
         SetX86InstrOperandList(instr, operand_list)
         instr_list[i] = instr
+
+    if rm_same_mov:
+        instr_list = _RemoveSameMov(instr_list)
+
     SetX86ProgramInstrList(x86_ast, instr_list)
     # the stack size is computed at this time
-    SetX86ProgramStackSize(x86_ast, -stack_pos)
-    assert len(var_stack_map) == len(GetNodeVarList(x86_ast))
+    SetX86ProgramStackSize(x86_ast, stack_sz)
     return x86_ast
 
 
@@ -430,36 +737,40 @@ def PatchInstruction(x86_ast):
     new_instr_list = []
     for instr in instr_list:
         has_appended = False
-        if TypeOf(instr) == X86_PROLOGUE_NODE_T:
-            # pushq   %rbp
-            # movq    %rsp, %rbp
-            # subq    $16, %rsp
-            prologue = MakeX86InstrNode(x86c.PUSH, MakeX86RegNode(x86c.RBP))
-            new_instr_list.append(prologue)
-            prologue = MakeX86InstrNode(x86c.MOVE, MakeX86RegNode(
-                x86c.RSP), MakeX86RegNode(x86c.RBP))
-            new_instr_list.append(prologue)
-            if stack_sz > 0:
-                prologue = MakeX86InstrNode(x86c.SUB, MakeX86IntNode(
-                    stack_sz), MakeX86RegNode(x86c.RSP))
-                new_instr_list.append(prologue)
-            has_appended = True
-        elif TypeOf(instr) == X86_EPILOGUE_NODE_T:
-            # addq    $16, %rsp
-            # popq    %rbp
-            # retq
-            if stack_sz > 0:
-                prologue = MakeX86InstrNode(x86c.ADD, MakeX86IntNode(
-                    stack_sz), MakeX86RegNode(x86c.RSP))
-                new_instr_list.append(prologue)
-            epilogue = MakeX86InstrNode(x86c.POP, MakeX86RegNode(x86c.RBP))
-            new_instr_list.append(epilogue)
-            epilogue = MakeX86InstrNode(x86c.RET)
-            new_instr_list.append(epilogue)
-            has_appended = True
+        if IsX86CallCNode(instr):
+            logue = GetX86CallCLogue(instr)
+            if logue == X86_CALLC_PROLOGUE:
+                # pushq   %rbp
+                # movq    %rsp, %rbp
+                # subq    $16, %rsp
+                instr = MakeX86InstrNode(x86c.PUSH, MakeX86RegNode(x86c.RBP))
+                new_instr_list.append(instr)
+                instr = MakeX86InstrNode(x86c.MOVE, MakeX86RegNode(
+                    x86c.RSP), MakeX86RegNode(x86c.RBP))
+                new_instr_list.append(instr)
+                if stack_sz > 0:
+                    instr = MakeX86InstrNode(x86c.SUB, MakeX86IntNode(
+                        stack_sz), MakeX86RegNode(x86c.RSP))
+                    new_instr_list.append(instr)
+                has_appended = True
+            else:
+                assert logue == X86_CALLC_EPILOGUE
+                # addq    $16, %rsp
+                # popq    %rbp
+                # retq
+                if stack_sz > 0:
+                    instr = MakeX86InstrNode(x86c.ADD, MakeX86IntNode(
+                        stack_sz), MakeX86RegNode(x86c.RSP))
+                    new_instr_list.append(instr)
+                instr = MakeX86InstrNode(x86c.POP, MakeX86RegNode(x86c.RBP))
+                new_instr_list.append(instr)
+                instr = MakeX86InstrNode(x86c.RET)
+                new_instr_list.append(instr)
+                has_appended = True
         elif GetX86InstrArity(instr) == 2:
             op1, op2 = GetX86InstrOperandList(instr)
-            if TypeOf(op1) == X86_DEREF_NODE_T and TypeOf(op2) == X86_DEREF_NODE_T:
+            if TypeOf(op1) == X86_DEREF_NODE_T and \
+                    TypeOf(op2) == X86_DEREF_NODE_T:
                 tmp_ref = MakeX86RegNode(x86c.RAX)
                 new_instr = MakeX86InstrNode(x86c.MOVE, op1, tmp_ref)
                 new_instr_list.append(new_instr)
@@ -493,7 +804,8 @@ def Compile(sch_ast):
     sch_ast = Uniquify(sch_ast)
     ir_ast = Flatten(sch_ast)
     x86_ast = SelectInstruction(ir_ast)
-    x86_ast = AssignHome(x86_ast)
+    x86_ast = UncoverLive(x86_ast)
+    x86_ast = AllocateRegisterOrStack(x86_ast)
     x86_ast = PatchInstruction(x86_ast)
     x86_ast = GenerateX86(x86_ast)
 
