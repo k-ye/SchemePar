@@ -623,14 +623,6 @@ def _AllocateRegisterOrStack(ig, mrg, use_mr):
             ig.AddSaturation(iv, loc)
         unassigned_var_names.remove(uv)
     stack_sz = -stack_pos  # be verbose about what is returned.
-    for var, loc in var_assigned_loc.iteritems():
-        loc_str = None
-        if IsX86RegNode(loc):
-            loc_str = '( reg %{} )'.format(GetX86Reg(loc))
-        else:
-            loc_str = '( deref {}(%{}) )'.format(
-                GetX86DerefOffset(loc), GetX86Reg(loc))
-        print('var={}, loc={}'.format(var, loc_str))
     return var_assigned_loc, stack_sz
 
 
