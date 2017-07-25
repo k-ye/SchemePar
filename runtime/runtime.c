@@ -4,7 +4,7 @@ typedef int long long Ptr;
 
 Ptr read_int() {
     Ptr x = 0;
-    printf("Input integer: ");
+    // printf("Input integer: ");
     scanf("%lld", &x);
     return x;
 }

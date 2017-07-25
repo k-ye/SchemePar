@@ -41,7 +41,8 @@ def SchemeParser():
             p[0] = p[0] + p[2]
 
     def p_var_def_pair(p):
-        'var_def_pair : LBRACKET expr_var expr RBRACKET'
+        '''var_def_pair : LBRACKET expr_var expr RBRACKET
+                        | LPAREN expr_var expr RPAREN'''
         p[0] = (p[2], p[3])
 
     def p_expr_apply(p):

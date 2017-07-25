@@ -81,9 +81,10 @@ if __name__ == '__main__':
 
     if input_filename is not None:
         import os
+        output_filepath = os.path.dirname(input_filename)
         output_filename = os.path.basename(input_filename)
         output_filename = os.path.splitext(output_filename)[0] + '.s'
-        output_filename = os.path.join('runtime', output_filename)
+        output_filename = os.path.join(output_filepath, output_filename)
         with open(output_filename, 'w') as wf:
             wf.write(x86_src_code)
             wf.write('\n')
