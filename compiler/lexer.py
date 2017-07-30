@@ -1,14 +1,20 @@
 from __future__ import print_function
 
 import ply.lex as lex
+import re
 
 keywords = {
     'let': 'LET',
     'read': 'READ',
+    'and': 'AND',
+    'or': 'OR',
+    'not': 'NOT',
+    'if': 'IF',
 }
 
 tokens = [
     'INT',  # Natural numbers
+    'BOOL',
     'VAR',
     'ADD',
     'MINUS',
@@ -16,6 +22,7 @@ tokens = [
     'RPAREN',
     'LBRACKET',
     'RBRACKET',
+    'BIN_CMP',
     'LINE_COMMENT',
     'BLK_COMMENT_BEGIN',
     'BLK_COMMENT',
@@ -28,9 +35,31 @@ states = [
     (_blkc_state, 'exclusive'),
 ]
 
+literals = ['+', '-', '(', ')', '[', ']']
+
 
 class LexingError(Exception):
     pass
+
+
+def LexPreprocess(source):
+    # Important to have the following whitespace
+    replace = {
+        # BIN_CMP
+        r'eq\?\s': '@eq ',
+        r'<\s': '@lt ',
+        r'<=\s': '@le ',
+        r'>\s': '@gt ',
+        r'>=\s': '@ge ',
+        # BOOL
+        # \1: 't' or 'f'
+        # \2: extra captured token, needs to be put back
+        r'#([tf])(\s|\]|\))': r'#\1 \2'
+    }
+
+    for pat, repl in replace.iteritems():
+        source = re.sub(pat, repl, source)
+    return source
 
 
 def SchemeLexer():
@@ -40,12 +69,18 @@ def SchemeLexer():
     t_RPAREN = r'\)'
     t_LBRACKET = r'\['
     t_RBRACKET = r'\]'
+    t_BIN_CMP = r'@((eq)|([lg][et]))'
     t_ANY_ignore = ' \t'
 
     # Token lexer for 'INITIAL' state
     def t_INT(t):
         r'\d+'
         t.value = int(t.value)
+        return t
+
+    def t_BOOL(t):
+        r'\#[tf]\s'  # valid bools are attached with a ' '
+        t.value = t.value.rstrip()
         return t
 
     def t_VAR(t):
@@ -80,7 +115,7 @@ def SchemeLexer():
         t.lexer.lineno += len(t.value)
 
     def t_ANY_error(t):
-        raise LexingError("Unknown character: {}".format(t.value[0]))
+        raise LexingError("Unknown token={}".format(t.value))
 
     return lex.lex()
 
@@ -99,11 +134,11 @@ if __name__ == '__main__':
     #! #! #!!!!#
 
     (let  ([foo 36])
-        (+ foo 6)
+        (if (eq? (<= foo 6) #t) 42 (- 42))
     )
     ; 42
     '''
-
+    test_data = LexPreprocess(test_data)
     sc_lexer = SchemeLexer()
     sc_lexer.input(test_data)
     while True:

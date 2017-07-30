@@ -85,6 +85,8 @@ if __name__ == '__main__':
         (+ foo bar)
     )
     '''
+    test_data = lexer.LexPreprocess(test_data)
+
     lexer = lexer.SchemeLexer()
     parser = SchemeParser()
     ast = parser.parse(test_data, lexer=lexer)

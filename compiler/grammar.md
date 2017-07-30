@@ -10,12 +10,26 @@ scheme : expr
 
 expr 
     : expr_int 
+    | expr_bool
     | expr_var
     | ( apply_inner )
     | ( LET ( let_var_binds ) expr )
+    | ( uni_bool_op expr )
+    | ( bin_bool_op expr expr )
+    | ( cmp_op expr expr )
+    | ( IF expr expr expr )
 
 # converts an int to an AST node
 expr_int : INT 
+
+# converts an boolean to an AST node
+expr_bool : #t | #f
+
+uni_bool_op : NOT
+
+bin_bool_op : AND | OR
+
+cmp_op : "eq?" | < | > | <= | >=
 
 # converts a string to an AST node
 expr_var : VAR
