@@ -12,9 +12,10 @@ class ParsingError(Exception):
 
 
 def SchemeParser():
-    def p_expr_int_var(p):
+    def p_expr_basic(p):
         '''expr : expr_int
-                | expr_var'''
+                | expr_var
+                | expr_bool'''
         p[0] = p[1]
 
     def p_expr_int(p):
@@ -24,6 +25,10 @@ def SchemeParser():
     def p_expr_var(p):
         'expr_var : VAR'
         p[0] = MakeSchVarNode(p[1])
+
+    def p_expr_bool(p):
+        'expr_bool : BOOL'
+        p[0] = MakeSchBoolNode(p[1])
 
     def p_expr_let(p):
         'expr : LPAREN LET let_var_binds expr RPAREN'
@@ -51,13 +56,26 @@ def SchemeParser():
 
     def p_apply_inner(p):
         '''apply_inner : READ
+                       | ADD expr expr
                        | MINUS expr
-                       | ADD expr expr'''
+                       | AND expr expr
+                       | OR expr expr
+                       | NOT expr
+                       | BIN_CMP expr expr'''
         method = p[1]
         arg_list = []
         for i in xrange(2, len(p)):
             arg_list.append(p[i])
         p[0] = MakeSchApplyNode(method, arg_list)
+
+    def p_expr_if(p):
+        'expr : LPAREN if_inner RPAREN'
+        p[0] = p[2]
+
+    def p_if_inner(p):
+        'if_inner : IF expr expr expr'
+        cond, then, els = p[2], p[3], p[4]
+        p[0] = MakeSchIfNode(cond, then, els)
 
     # def p_empty(p):
     #     'empty :'
@@ -80,9 +98,9 @@ def SchemeParser():
 
 if __name__ == '__main__':
     test_data = '''
-    ; a test Scheme program using R1 grammar
+    ; a test Scheme program using R2 grammar
     (let ([foo 43] [bar (- 1)])
-        (+ foo bar)
+        (if #t (+ foo bar) 0)
     )
     '''
     test_data = lexer.LexPreprocess(test_data)

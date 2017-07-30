@@ -12,6 +12,7 @@ _SCH_APPLY_P_EXPR_LIST = 'expr_list'
 
 _NODE_TC = TypeChain(NODE_T, None)
 _EXPR_TC = TypeChain(EXPR_NODE_T, _NODE_TC)
+_CF_TC = TypeChain('control_flow', _NODE_TC)
 
 
 def _MakeSchNode(type, parent_tc):
@@ -30,7 +31,13 @@ def MakeSchIntNode(x):
 
 def MakeSchVarNode(var):
     node = _MakeSchExprNode(VAR_NODE_T)
-    SetProperty(node, VAR_P_VAR, var)
+    SetProperty(node, NODE_P_VAR, var)
+    return node
+
+
+def MakeSchBoolNode(b):
+    node = _MakeSchExprNode(BOOL_NODE_T)
+    SetProperty(node, NODE_P_BOOL, b)
     return node
 
 
@@ -87,6 +94,18 @@ def SetSchProgram(node, prg_body):
     SetProperty(node, _SCH_PRG_P_PROGRAM, prg_body)
 
 
+def MakeSchIfNode(cond, then, els):
+    node = _MakeSchNode(IF_NODE_T, _CF_TC)
+    SetProperty(node, IF_P_COND, cond)
+    SetProperty(node, IF_P_THEN, then)
+    SetProperty(node, IF_P_ELSE, els)
+    return node
+
+
+def IsSchIfNode(node):
+    return LangOf(node) == SCH_LANG and TypeOf(node) == IF_NODE_T
+
+
 ''' Scheme Ast Node Visitor
 '''
 
@@ -114,10 +133,14 @@ class SchAstVisitorBase(object):
             result = self.VisitApply(node)
         elif ndtype == SCH_LET_NODE_T:
             result = self.VisitLet(node)
+        elif ndtype == IF_NODE_T:
+            result = self.VisitIf(node)
         elif ndtype == INT_NODE_T:
             result = self.VisitInt(node)
         elif ndtype == VAR_NODE_T:
             result = self.VisitVar(node)
+        elif ndtype == BOOL_NODE_T:
+            result = self.VisitBool(node)
         else:
             raise RuntimeError("Unknown Scheme node type={}".format(ndtype))
         return result
@@ -131,10 +154,16 @@ class SchAstVisitorBase(object):
     def VisitLet(self, node):
         return node
 
+    def VisitIf(self, node):
+        return node
+
     def VisitInt(self, node):
         return node
 
     def VisitVar(self, node):
+        return node
+
+    def VisitBool(self, node):
         return node
 
 
@@ -158,6 +187,14 @@ class _SchSourceCodeVisitor(SchAstVisitorBase):
         return node
 
     def VisitApply(self, node):
+        builder = self._builder
+        builder.Append('( {}'.format(GetNodeMethod(node)))
+        with builder.Indent():
+            for expr in GetSchApplyExprList(node):
+                builder.NewLine()
+                self._Visit(expr)
+        builder.NewLine()
+        builder.Append(')')
         return node
 
     def VisitLet(self, node):
@@ -183,12 +220,40 @@ class _SchSourceCodeVisitor(SchAstVisitorBase):
         builder.Append(')')
         return node
 
+    def VisitIf(self, node):
+        builder = self._builder
+
+        builder.Append('( if')
+        with builder.Indent():
+            builder.NewLine()
+            builder.Append('; cond')
+            builder.NewLine()
+            self._Visit(GetIfCond(node))
+
+            builder.NewLine()
+            builder.Append('; then-branch')
+            builder.NewLine()
+            self._Visit(GetIfThen(node))
+
+            builder.NewLine()
+            builder.Append('; else-branch')
+            builder.NewLine()
+            self._Visit(GetIfElse(node))
+
+        builder.NewLine()
+        builder.Append(')')
+        return node
+
     def VisitInt(self, node):
         self._builder.Append(GetIntX(node))
         return node
 
     def VisitVar(self, node):
         self._builder.Append(GetNodeVar(node))
+        return node
+
+    def VisitBool(self, node):
+        self._builder.Append(GetNodeBool(node))
         return node
 
 

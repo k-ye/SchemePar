@@ -187,7 +187,7 @@ def SetX86DerefOffset(node, offset):
 
 def MakeX86VarNode(var):
     node = _MakeX86ArgNode(VAR_NODE_T)
-    SetProperty(node, VAR_P_VAR, var)
+    SetProperty(node, NODE_P_VAR, var)
     return node
 
 

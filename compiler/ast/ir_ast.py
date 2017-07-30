@@ -37,7 +37,7 @@ def MakeIrAssignNode(var, expr):
     assert LangOf(var) == IR_LANG and TypeOf(var) == VAR_NODE_T
     assert LangOf(expr) == IR_LANG
     node = _MakeIrStmtNode(IR_ASSIGN_NODE_T)
-    SetProperties(node, {VAR_P_VAR: var, _IR_ASSIGN_P_EXPR: expr})
+    SetProperties(node, {NODE_P_VAR: var, _IR_ASSIGN_P_EXPR: expr})
     return node
 
 
@@ -95,7 +95,7 @@ def MakeIrIntNode(x):
 
 def MakeIrVarNode(var):
     node = _MakeIrArgNode(VAR_NODE_T)
-    SetProperty(node, VAR_P_VAR, var)
+    SetProperty(node, NODE_P_VAR, var)
     return node
 
 

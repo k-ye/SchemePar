@@ -103,19 +103,25 @@ NODE_T = 'node'
 EXPR_NODE_T = 'expr'
 INT_NODE_T = 'int'
 VAR_NODE_T = 'var'
+BOOL_NODE_T = 'bool'
 ARG_NODE_T = 'arg'
 STMT_NODE_T = 'stmt'
 APPLY_NODE_T = 'apply'
 PROGRAM_NODE_T = 'program'
+IF_NODE_T = 'if'
 
 '''Common Node Property Names
 '''
 INT_P_X = 'x'
-VAR_P_VAR = 'var'
+NODE_P_VAR = 'var'
+NODE_P_BOOL = 'bool'
 P_METHOD = 'method'
 P_ARG_LIST = 'arg_list'
 P_VAR_LIST = 'var_list'
 P_STMT_LIST = 'stmt_list'
+IF_P_COND = 'cond'
+IF_P_THEN = 'then'
+IF_P_ELSE = 'else'
 
 ''' Common Node Operations
 '''
@@ -136,7 +142,17 @@ def GetNodeVar(node):
 
 
 def SetNodeVar(node, var):
-    SetProperty(node, VAR_P_VAR, var)
+    SetProperty(node, NODE_P_VAR, var)
+
+
+def GetNodeBool(node):
+    assert TypeOf(node) == BOOL_NODE_T
+    return GetProperty(node, NODE_P_BOOL)
+
+
+def SetNodeBool(node, b):
+    assert TypeOf(node) == BOOL_NODE_T
+    SetProperty(node, NODE_P_BOOL, b)
 
 
 def GetNodeVarList(node):
@@ -169,3 +185,33 @@ def GetNodeMethod(node):
 
 def SetNodeMethod(node, method):
     GetProperty(node, P_METHOD, method)
+
+
+def GetIfCond(node):
+    assert TypeOf(node) == IF_NODE_T
+    return GetProperty(node, IF_P_COND)
+
+
+def SetIfCond(node, cond):
+    assert TypeOf(node) == IF_NODE_T
+    SetProperty(node, IF_P_COND, cond)
+
+
+def GetIfThen(node):
+    assert TypeOf(node) == IF_NODE_T
+    return GetProperty(node, IF_P_THEN)
+
+
+def SetIfThen(node, then):
+    assert TypeOf(node) == IF_NODE_T
+    SetProperty(node, IF_P_THEN, then)
+
+
+def GetIfElse(node):
+    assert TypeOf(node) == IF_NODE_T
+    return GetProperty(node, IF_P_ELSE)
+
+
+def SetIfElse(node, els):
+    assert TypeOf(node) == IF_NODE_T
+    SetProperty(node, IF_P_ELSE, els)
