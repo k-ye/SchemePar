@@ -2,49 +2,43 @@
 
 ## Scheme
 
-- version: R1
+- version: R2
 - BNF (terminal symbols are all CAPITALIZED, while non-terminal symbols are all in lowercase)
 
 ```
-scheme : expr
+r2 : expr
 
-expr 
-    : expr_int 
-    | expr_bool
-    | expr_var
-    | ( apply_inner )
-    | ( LET ( let_var_binds ) expr )
-    | ( uni_bool_op expr )
-    | ( bin_bool_op expr expr )
-    | ( cmp_op expr expr )
-    | ( IF expr expr expr )
+expr
+    : arg
+    | '(' method maybe_expr_list ')'
+    | '(' 'let' '(' let_var_bind_list ')' expr ')'
+    | '(' 'if' expr expr expr ')'
 
-# converts an int to an AST node
-expr_int : INT 
+arg : int | var | bool
 
-# converts an boolean to an AST node
-expr_bool : #t | #f
+method
+    : arith_op
+    | cmp_op
+    | logical_op
+    | builtn_fn
 
-uni_bool_op : NOT
+arith_op : '+' | '-'
 
-bin_bool_op : AND | OR
+cmp_op : 'eq?' | '<' | '<=' | '>' | '>='
 
-cmp_op : "eq?" | < | > | <= | >=
+logical_op : 'and' | 'not' | 'or'
 
-# converts a string to an AST node
-expr_var : VAR
+maybe_expr_list
+    : (empty)
+    | expr maybe_expr_list
 
-apply_inner
-    : READ
-    | MINUS expr
-    | ADD expr expr
+let_var_bind_list
+    : var_bind_pair
+    | var_bind_pair let_var_bind_list
 
-let_var_binds : ( let_var_list )
-
-# let_var_list contains at least 1 var_def_pair
-let_var_list : var_def_pair | var_def_pair let_var_list
-
-var_def_pair : [ expr_var expr ]
+var_bind_pair
+    : '[' var expr ']'
+    | '(' var expr ')'
 
 ```
 

@@ -5,38 +5,34 @@ import re
 
 keywords = {
     'let': 'LET',
-    'read': 'READ',
-    'and': 'AND',
-    'or': 'OR',
-    'not': 'NOT',
     'if': 'IF',
+    'read': 'BUILTIN_FN',
+    'and': 'LOGICAL_OP',
+    'or': 'LOGICAL_OP',
+    'not': 'LOGICAL_OP',
 }
 
 tokens = [
     'INT',  # Natural numbers
     'BOOL',
     'VAR',
-    'ADD',
-    'MINUS',
+    'ARITH_OP',
+    'CMP_OP',
     'LPAREN',
     'RPAREN',
     'LBRACKET',
     'RBRACKET',
-    'BIN_CMP',
     'LINE_COMMENT',
     'BLK_COMMENT_BEGIN',
     'BLK_COMMENT',
     'BLK_COMMENT_END',
-] + list(keywords.values())
+] + list(set(keywords.values()))
 
 _blkc_state = 'blkc'
 
 states = [
     (_blkc_state, 'exclusive'),
 ]
-
-literals = ['+', '-', '(', ')', '[', ']']
-
 
 class LexingError(Exception):
     pass
@@ -54,7 +50,7 @@ def LexPreprocess(source):
         # BOOL
         # \1: 't' or 'f'
         # \2: extra captured token, needs to be put back
-        r'#([tf])(\s|\]|\))': r'#\1 \2'
+        r'#([tf])(\s|\]|\))': r'#\1 \2',
     }
 
     for pat, repl in replace.iteritems():
@@ -63,13 +59,11 @@ def LexPreprocess(source):
 
 
 def SchemeLexer():
-    t_ADD = r'\+'
-    t_MINUS = r'-'
+    t_ARITH_OP = r'\+|-'
     t_LPAREN = r'\('
     t_RPAREN = r'\)'
     t_LBRACKET = r'\['
     t_RBRACKET = r'\]'
-    t_BIN_CMP = r'@((eq)|([lg][et]))'
     t_ANY_ignore = ' \t'
 
     # Token lexer for 'INITIAL' state
@@ -86,6 +80,12 @@ def SchemeLexer():
     def t_VAR(t):
         r'[a-zA-Z_][a-zA-Z0-9_]*'
         t.type = keywords.get(t.value, 'VAR')
+        return t
+
+    def t_CMP_OP(t):
+        r'@((eq)|([lg][et]))'
+        m = {'@eq': 'eq?', '@lt': '<', '@le': '<=', '@gt': '>', '@ge': '>='}
+        t.value = m[t.value]
         return t
 
     def t_LINE_COMMENT(t):
@@ -134,7 +134,7 @@ if __name__ == '__main__':
     #! #! #!!!!#
 
     (let  ([foo 36])
-        (and #t 2)
+        (eq?  (and #t 2) 5)
     )
     ; 42
     '''
