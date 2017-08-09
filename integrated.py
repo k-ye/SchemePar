@@ -2,8 +2,9 @@ from __future__ import print_function
 
 import sys
 
-from compiler.lexer import SchemeLexer
+from compiler.lexer import LexPreprocess, SchemeLexer
 from compiler.parser import SchemeParser
+import compiler.analyzer as anlz
 from compiler.compiler import *
 
 if __name__ == '__main__':
@@ -46,10 +47,14 @@ if __name__ == '__main__':
         print('---\n')
 
     PrintSourceCode('Source code', test_data)
+    
+    test_data = LexPreprocess(test_data)
 
     lexer = SchemeLexer()
     parser = SchemeParser()
     ast = parser.parse(test_data, lexer=lexer)
+
+    anlz.analyze(ast)
 
     sch_ast = Uniquify(ast)
     PrintSourceCode('Source code after uniquify', SchSourceCode(sch_ast))
