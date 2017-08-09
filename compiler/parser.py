@@ -62,7 +62,7 @@ def SchemeParser():
         '''apply_method : ARITH_OP
                         | CMP_OP
                         | LOGICAL_OP
-                        | BUILTIN_FN'''
+                        | RTM_FN'''
         p[0] = p[1]
 
     def p_maybe_expr_list(p):

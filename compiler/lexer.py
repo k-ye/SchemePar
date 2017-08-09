@@ -2,15 +2,16 @@ from __future__ import print_function
 
 import ply.lex as lex
 import re
+from ast.sch_ast import *
 
 keywords = {
     'let': 'LET',
     'if': 'IF',
-    'read': 'BUILTIN_FN',
     'and': 'LOGICAL_OP',
     'or': 'LOGICAL_OP',
     'not': 'LOGICAL_OP',
 }
+keywords.update({r: 'RTM_FN' for r in SchRtmFns()})
 
 tokens = [
     'INT',  # Natural numbers
@@ -33,6 +34,7 @@ _blkc_state = 'blkc'
 states = [
     (_blkc_state, 'exclusive'),
 ]
+
 
 class LexingError(Exception):
     pass
@@ -134,7 +136,7 @@ if __name__ == '__main__':
     #! #! #!!!!#
 
     (let  ([foo 36])
-        (eq?  (and #t 2) 5)
+        (eq? (and #t 2) 5)
     )
     ; 42
     '''

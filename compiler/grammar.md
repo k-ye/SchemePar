@@ -20,7 +20,7 @@ method
     : arith_op
     | cmp_op
     | logical_op
-    | builtn_fn
+    | rtm_fn
 
 arith_op : '+' | '-'
 

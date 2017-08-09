@@ -19,13 +19,6 @@ the *SAME* scope, type matching. We leave that for later excercises.
 '''
 
 
-def Analyze(ast):
-    '''
-    ast: An SchNode.
-    '''
-    raise NotImplementedError("Analyze")
-
-
 ''' Uniquify pass
 This pass uniquifies all the variable names in the Scheme AST. In another word, 
 it does an alpha-reduction on the entire AST.

@@ -14,6 +14,9 @@ _NODE_TC = TypeChain(NODE_T, None)
 _EXPR_TC = TypeChain(EXPR_NODE_T, _NODE_TC)
 _CF_TC = TypeChain('control_flow', _NODE_TC)
 
+# # evaluate type that is inferenced.
+# _P_INFER_EVAL_TYPE = 'infer_eval_type'
+
 
 def _MakeSchNode(type, parent_tc):
     return MakeAstNode(type, parent_tc, SCH_LANG)
@@ -22,6 +25,24 @@ def _MakeSchNode(type, parent_tc):
 def _MakeSchExprNode(type):
     return _MakeSchNode(type, _EXPR_TC)
 
+
+# def _IsNodeTypeInferred(node):
+#     # right now we only have runtime provided functions ('read') that
+#     # could produce an evaluation type of 'any'
+#     if not TypeOf(node) == APPLY_NODE_T:
+#         return False
+#     method = GetNodeMethod(node)
+#     return IsSchRtmFn(method)
+
+
+# def SetSchNodeInferredEvalType(node, type):
+#     assert LangOf(node) == SCH_LANG and _IsNodeTypeInferred(node)
+#     SetProperty(node, _P_INFER_EVAL_TYPE, type)
+
+
+# def GetSchNodeInferredEvalType(node):
+#     assert LangOf(node) == SCH_LANG and _IsNodeTypeInferred(node)
+#     return GetProperty(node, _P_INFER_EVAL_TYPE)
 
 def MakeSchIntNode(x):
     node = _MakeSchExprNode(INT_NODE_T)
@@ -55,6 +76,23 @@ def GetSchApplyExprList(node):
 def SetSchApplyExprList(node, expr_list):
     assert LangOf(node) == SCH_LANG and TypeOf(node) == APPLY_NODE_T
     SetProperty(node, _SCH_APPLY_P_EXPR_LIST, expr_list)
+
+
+def IsSchArithop(method):
+    return method in {'+', '-'}
+
+
+def IsSchCmpOp(method):
+    return method in {'eq?', '<', '<=', '>', '>='}
+
+
+def IsSchLogicalOp(method):
+    return method in {'and', 'not', 'or'}
+
+
+def IsSchRtmFn(method):
+    # check for builtin runtime function
+    return method in {'read', 'read_int', 'read_bool'}
 
 
 def MakeSchLetNode(var_list, let_body):
@@ -106,6 +144,24 @@ def IsSchIfNode(node):
     return LangOf(node) == SCH_LANG and TypeOf(node) == IF_NODE_T
 
 
+def SchRtmFns():
+    return ['read', 'read_int', 'read_bool', ]
+
+
+class SchEvalTypes(object):
+    INT = 'int'
+    BOOL = 'bool'
+    _rtm_types = {
+        'read': INT,
+        'read_int': INT,
+        'read_bool': BOOL,
+    }
+
+    @staticmethod
+    def RtmFnType(method):
+        return SchEvalTypes._rtm_types[method]
+
+
 ''' Scheme Ast Node Visitor
 '''
 
@@ -113,17 +169,29 @@ def IsSchIfNode(node):
 class SchAstVisitorBase(object):
 
     def Visit(self, node):
+        '''
+        Do NOT override
+        '''
         self._BeginVisit()
         visit_result = self._Visit(node)
         return self._EndVisit(node, visit_result)
 
     def _BeginVisit(self):
+        '''
+        Optional to override
+        '''
         pass
 
     def _EndVisit(self, node, visit_result):
+        '''
+        Optional to override
+        '''
         return visit_result
 
     def _Visit(self, node):
+        '''
+        Do NOT override
+        '''
         assert LangOf(node) == SCH_LANG
         ndtype = TypeOf(node)
         result = None
@@ -146,24 +214,45 @@ class SchAstVisitorBase(object):
         return result
 
     def VisitProgram(self, node):
+        '''
+        Override
+        '''
         return node
 
     def VisitApply(self, node):
+        '''
+        Override
+        '''
         return node
 
     def VisitLet(self, node):
+        '''
+        Override
+        '''
         return node
 
     def VisitIf(self, node):
+        '''
+        Override
+        '''
         return node
 
     def VisitInt(self, node):
+        '''
+        Override
+        '''
         return node
 
     def VisitVar(self, node):
+        '''
+        Override
+        '''
         return node
 
     def VisitBool(self, node):
+        '''
+        Override
+        '''
         return node
 
 
