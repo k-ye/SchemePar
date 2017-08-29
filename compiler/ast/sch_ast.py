@@ -114,7 +114,7 @@ def SetSchLetBody(node, let_body):
 
 def MakeSchProgramNode(prg_body):
     assert LangOf(prg_body) == SCH_LANG and \
-        ParentOf(prg_body).type == EXPR_NODE_T
+        ParentOf(prg_body).type == EXPR_NODE_T, ParentOf(prg_body).type
     node = _MakeSchNode(PROGRAM_NODE_T, _NODE_TC)
     SetProperty(node, _SCH_PRG_P_PROGRAM, prg_body)
     return node
@@ -133,7 +133,7 @@ def SetSchProgram(node, prg_body):
 
 
 def MakeSchIfNode(cond, then, els):
-    node = _MakeSchNode(IF_NODE_T, _CF_TC)
+    node = _MakeSchExprNode(IF_NODE_T)  # _MakeSchNode(IF_NODE_T, _CF_TC)
     SetProperty(node, IF_P_COND, cond)
     SetProperty(node, IF_P_THEN, then)
     SetProperty(node, IF_P_ELSE, els)

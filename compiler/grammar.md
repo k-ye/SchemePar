@@ -6,75 +6,65 @@
 - BNF (terminal symbols are all CAPITALIZED, while non-terminal symbols are all in lowercase)
 
 ```
-r2 : expr
 
-expr
-    : arg
-    | '(' method maybe_expr_list ')'
-    | '(' 'let' '(' let_var_bind_list ')' expr ')'
-    | '(' 'if' expr expr expr ')'
+r2 : ( 'program' expr )
 
-arg : int | var | bool
+expr 
+    : arg 
+    | ( method maybe_expr_list ) 
+    | ( 'let' ( var_pair_list ) expr )
+    | ( 'if' expr expr expr )
+
+arg : int | id | '#t' | '#f'
 
 method
-    : arith_op
-    | cmp_op
+    : cmp_op
+    | arith_op
     | logical_op
-    | rtm_fn
-
-arith_op : '+' | '-'
+    | _builtin_fn
 
 cmp_op : 'eq?' | '<' | '<=' | '>' | '>='
 
+arith_op : '+' | '-'
+
 logical_op : 'and' | 'not' | 'or'
+
+_builtin_fn : 'read'
 
 maybe_expr_list
     : (empty)
     | expr maybe_expr_list
 
-let_var_bind_list
-    : var_bind_pair
-    | var_bind_pair let_var_bind_list
+var_pair_list
+    : var_pair
+    | var_pair var_pair_list
 
-var_bind_pair
-    : '[' var expr ']'
-    | '(' var expr ')'
-
+var_pair : '[' id expr ']'
 ```
 
 ## IR
 
-- version: C0
+- version: C1
 - There is no lexing/parsing for IR. We generate its AST from Scheme's AST directly in Flatten pass.
 - BNF
 
 ```
-ir : ( PROGRAM ( maybe_var_list ) ( stmt_list ))
-
-maybe_var_list
-    : var maybe_var_list
-    | empty
-
-stmt_list 
-    : stmt 
-    | stmt stmt_list
+c1 : ( 'program' stmt_list )
 
 stmt
-    : ( ASSIGN var expr )
-    | ( RETURN arg )
+    : ( 'assign' var expr )
+    | ( 'return' arg )
+    | ( 'if' ( cmp arg arg ) 
+                     ( stmt_list )
+                     ( stmt_list ) )
 
-expr
-    : arg
-    | ( READ )
-    | ( - arg )
-    | ( + arg arg )
+stmt_list : stmt | stmt stmt_list
 
-arg 
-    : INT
-    | var
+expr : arg | ( 'read' ) | ( '-' arg ) | ( '+' arg arg ) | ( 'not' arg ) | ( cmp arg arg )
 
-var : VAR
+cmp : 'eq?' | '<' | '<=' | '>' | '>='
 
+arg : int | var | '#t' | '#f'
 ```
 
 ## X86 Assembly

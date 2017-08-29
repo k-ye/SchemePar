@@ -7,9 +7,13 @@ IR_LANG = 'ir'
 
 IR_ASSIGN_NODE_T = 'assign'
 IR_RETURN_NODE_T = 'return'
+IR_CMP_NODE_T = 'cmp'
 
 _IR_ASSIGN_P_EXPR = 'expr'
 _IR_RETURN_P_ARG = 'arg'
+_IR_P_OP = 'op'
+_IR_BINOP_P_LHS = 'lhs'
+_IR_BINOP_P_RHS = 'rhs'
 
 _NODE_TC = TypeChain(NODE_T, None)
 _STMT_TC = TypeChain(STMT_NODE_T, _NODE_TC)
@@ -31,6 +35,68 @@ def _MakeIrExprNode(type):
 
 def _MakeIrArgNode(type):
     return _MakeIrNode(type, _ARG_TC)
+
+
+def MakeIrCmpNode(op, lhs, rhs):
+    assert IsIrArgNode(lhs) and IsIrArgNode(rhs)
+    node = _MakeIrExprNode(IR_CMP_NODE_T)
+    SetProperty(node, _IR_P_OP, op)
+    SetProperty(node, _IR_BINOP_P_LHS, lhs)
+    SetProperty(node, _IR_BINOP_P_RHS, rhs)
+    return node
+
+
+def IsIrCmpNode(node):
+    return LangOf(node) == IR_LANG and TypeOf(node) == IR_CMP_NODE_T
+
+
+def GetIrCmpOp(node):
+    assert IsIrCmpNode(node)
+    return GetProperty(node, _IR_P_OP)
+
+
+def SetIrCmpOp(node, op):
+    assert IsIrCmpNode(node)
+    SetProperty(node, _IR_P_OP, op)
+
+
+def GetIrCmpLhs(node):
+    assert IsIrCmpNode(node)
+    return GetProperty(node, _IR_BINOP_P_LHS)
+
+
+def SetIrCmpLhs(node, lhs):
+    assert IsIrCmpNode(node)
+    SetProperty(node, _IR_BINOP_P_LHS, lhs)
+
+
+def GetIrCmpRhs(node):
+    assert IsIrCmpNode(node)
+    return GetProperty(node, _IR_BINOP_P_RHS)
+
+
+def SetIrCmpRhs(node, rhs):
+    assert IsIrCmpNode(node)
+    SetProperty(node, _IR_BINOP_P_RHS, rhs)
+
+
+def MakeIrIfNode(cond, then, els):
+    assert IsIrCmpNode(cond)
+    try:
+        iter(then)
+        iter(els)
+    except TypeError:
+        # not iterable
+        assert False, '|then| or |els| not iterable'
+    node = _MakeIrStmtNode(IF_NODE_T)
+    SetProperty(node, IF_P_COND, cond)
+    SetProperty(node, IF_P_THEN, then)
+    SetProperty(node, IF_P_ELSE, els)
+    return node
+
+
+def IsIrIfNode(node):
+    return LangOf(node) == IR_LANG and TypeOf(node) == IF_NODE_T
 
 
 def MakeIrAssignNode(var, expr):
@@ -77,6 +143,10 @@ def MakeIrProgramNode(var_list, stmt_list):
     return node
 
 
+def IsIrProgramNode(node):
+    return LangOf(node) == IR_LANG and TypeOf(node) == PROGRAM_NODE_T
+
+
 def IsIrArgNode(node):
     if LangOf(node) != IR_LANG:
         return False
@@ -99,10 +169,17 @@ def MakeIrVarNode(var):
     return node
 
 
+def MakeIrBoolNode(b):
+    node = _MakeIrArgNode(BOOL_NODE_T)
+    SetProperty(node, NODE_P_BOOL, b)
+    return node
+
+
 def MakeIrApplyNode(method, arg_list):
     node = _MakeIrExprNode(APPLY_NODE_T)
     SetProperties(node, {P_METHOD: method, P_ARG_LIST: arg_list})
     return node
+
 
 ''' IR Ast Node Visitor
 '''
@@ -122,7 +199,12 @@ class IrAstVisitorBase(object):
         return visit_result
 
     def _Visit(self, node):
-        assert LangOf(node) == IR_LANG
+        try:
+            assert LangOf(node) == IR_LANG
+        except AssertionError:
+            import pdb
+            pdb.set_trace()
+
         ndtype = TypeOf(node)
         result = None
         if ndtype == PROGRAM_NODE_T:
@@ -131,10 +213,16 @@ class IrAstVisitorBase(object):
             result = self.VisitAssign(node)
         elif ndtype == IR_RETURN_NODE_T:
             result = self.VisitReturn(node)
+        elif ndtype == IF_NODE_T:
+            result = self.VisitIf(node)
+        elif ndtype == IR_CMP_NODE_T:
+            result = self.VisitCmp(node)
         elif ndtype == INT_NODE_T:
             result = self.VisitInt(node)
         elif ndtype == VAR_NODE_T:
             result = self.VisitVar(node)
+        elif ndtype == BOOL_NODE_T:
+            result = self.VisitBool(node)
         elif ndtype == APPLY_NODE_T:
             result = self.VisitApply(node)
         else:
@@ -150,10 +238,19 @@ class IrAstVisitorBase(object):
     def VisitReturn(self, node):
         return node
 
+    def VisitIf(self, node):
+        return node
+
+    def VisitCmp(self, node):
+        return node
+
     def VisitInt(self, node):
         return node
 
     def VisitVar(self, node):
+        return node
+
+    def VisitBool(self, node):
         return node
 
     def VisitApply(self, node):
@@ -195,12 +292,56 @@ class _IrSourceCodeVisitor(IrAstVisitorBase):
         self._builder.Append(')')
         return node
 
+    def VisitIf(self, node):
+        builder = self._builder
+        builder.Append('( if')
+        with builder.Indent():
+            builder.NewLine()
+            # cond
+            self._Visit(GetIfCond(node))
+            # then branch
+            builder.NewLine()
+            builder.Append('# then')
+            builder.NewLine()
+            builder.Append('(')
+            with builder.Indent():
+                for stmt in GetIfThen(node):
+                    builder.NewLine()
+                    self._Visit(stmt)
+            builder.NewLine()
+            builder.Append(')')
+            # else branch
+            builder.NewLine()
+            builder.Append('# else')
+            builder.NewLine()
+            builder.Append('(')
+            with builder.Indent():
+                for stmt in GetIfElse(node):
+                    builder.NewLine()
+                    self._Visit(stmt)
+            builder.NewLine()
+            builder.Append(')')
+        builder.NewLine()
+        builder.Append(')')
+        return node
+
+    def VisitCmp(self, node):
+        self._builder.Append('( {}'.format(GetIrCmpOp(node)))
+        self._Visit(GetIrCmpLhs(node))
+        self._Visit(GetIrCmpRhs(node))
+        self._builder.Append(')')
+        return node
+
     def VisitInt(self, node):
         self._builder.Append(GetIntX(node))
         return node
 
     def VisitVar(self, node):
         self._builder.Append(GetNodeVar(node))
+        return node
+
+    def VisitBool(self, node):
+        self._builder.Append(GetNodeBool(node))
         return node
 
     def VisitApply(self, node):

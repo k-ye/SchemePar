@@ -164,10 +164,43 @@ This pass flattens an Scheme AST to an equivalent IR AST
 '''
 
 
-class _SchToIrBuilder(_LowLvPassBuilder):
+class _LowLvPassVarBuilder(object):
+    '''
+    Base class of the low level language, including IR and X86 assembly.
+    '''
 
     def __init__(self):
-        super(_SchToIrBuilder, self).__init__()
+        self._var_dict = {}
+        # this is to order the variable list
+        self._var_name_list = []
+
+    @property
+    def var_list(self):
+        result = [self._var_dict[name] for name in self._var_name_list]
+        return result
+
+    def _CreateVar(self, var):
+        # Override this
+        raise NotImplementedError("_CreateVar")
+
+    def AddVar(self, var):
+        assert not self.ContainsVar(var)
+        var_node = self._CreateVar(var)
+        self._var_dict[var] = var_node
+        self._var_name_list.append(var)
+        return var_node
+
+    def GetVar(self, var):
+        return self._var_dict[var]
+
+    def ContainsVar(self, var):
+        return var in self._var_dict
+
+
+class _SchToIrVarBuilder(_LowLvPassVarBuilder):
+
+    def __init__(self):
+        super(_SchToIrVarBuilder, self).__init__()
         self._next_tmp = 0
 
     def _CreateVar(self, var):
@@ -179,52 +212,102 @@ class _SchToIrBuilder(_LowLvPassBuilder):
         return self.AddVar(tmp_var)
 
 
+class _SchToIrStmtBuilder(object):
+
+    def __init__(self):
+        self._stmt_list = []
+
+    @property
+    def stmt_list(self):
+        return self._stmt_list
+
+    def AddStmt(self, stmt):
+        self._stmt_list.append(stmt)
+
+    def GetStmt(self, index):
+        return self._stmt_list[index]
+
+    def ChangeStmt(self, index, stmt):
+        self._stmt_list[index] = stmt
+
+
 class _FlattenVisitor(SchAstVisitorBase):
 
     def __init__(self):
         super(_FlattenVisitor, self).__init__()
 
     def _BeginVisit(self):
-        self._builder = _SchToIrBuilder()
+        self._builder = _SchToIrVarBuilder()
+
+    def _EndVisit(self, node, visit_result):
+        assert IsIrProgramNode(visit_result[0])
+        return visit_result[0]
 
     def VisitProgram(self, node):
-        ir_expr = self._Visit(GetSchProgram(node))
-        ret_var = ir_expr
-        builder = self._builder
-        if not IsIrArgNode(ir_expr):
-            ret_var = builder.AllocateTmpVar()
-            builder.AddStmt(MakeIrAssignNode(ret_var, ir_expr))
-        builder.AddStmt(MakeIrReturnNode(ret_var))
-        return MakeIrProgramNode(builder.var_list, builder.stmt_list)
+        ir_expr, stmt_list = self._Visit(GetSchProgram(node))
+        assert IsIrArgNode(ir_expr)
+        stmt_list.append(MakeIrReturnNode(ir_expr))
+        return MakeIrProgramNode(self._builder.var_list, stmt_list), stmt_list
 
     def VisitApply(self, node):
         new_arg_list = []
+        stmt_list = []
         for expr in GetSchApplyExprList(node):
-            ir_expr = self._Visit(expr)
-            if IsIrArgNode(ir_expr):
-                new_arg_list.append(ir_expr)
-            else:
-                tmp_var = self._builder.AllocateTmpVar()
-                self._builder.AddStmt(MakeIrAssignNode(tmp_var, ir_expr))
-                new_arg_list.append(tmp_var)
-        return MakeIrApplyNode(GetNodeMethod(node), new_arg_list)
+            ir_expr, expr_stmt_list = self._Visit(expr)
+            assert IsIrArgNode(ir_expr)
+            stmt_list += expr_stmt_list
+            new_arg_list.append(ir_expr)
+        ir_apply = MakeIrApplyNode(GetNodeMethod(node), new_arg_list)
+        tmp_var = self._builder.AllocateTmpVar()
+        stmt_list.append(MakeIrAssignNode(tmp_var, ir_apply))
+        return tmp_var, stmt_list
 
     def VisitLet(self, node):
         ir_var_init = []
+        stmt_list = []
         for var, var_init in GetNodeVarList(node):
-            ir_init = self._Visit(var_init)
+            ir_init, init_stmt_list = self._Visit(var_init)
+            assert IsIrArgNode(ir_init)
             # Cannot add assign stmt yet, cache it in |ir_var_init|
             ir_var_init.append((GetNodeVar(var), ir_init))
+            stmt_list += init_stmt_list
         for var_name, ir_init in ir_var_init:
             ir_var = self._builder.AddVar(var_name)
-            self._builder.AddStmt(MakeIrAssignNode(ir_var, ir_init))
-        return self._Visit(GetSchLetBody(node))
+            stmt_list.append(MakeIrAssignNode(ir_var, ir_init))
+        ir_body, body_stmt_list = self._Visit(GetSchLetBody(node))
+        assert IsIrArgNode(ir_body)
+        stmt_list += body_stmt_list
+        return ir_body, stmt_list
+
+    def VisitIf(self, node):
+        stmt_list = []
+        # cond
+        ir_cond, cond_stmt_list = self._Visit(GetIfCond(node))
+        assert IsIrArgNode(ir_cond)
+        stmt_list += cond_stmt_list
+        ir_cond = MakeIrCmpNode('eq?', MakeIrBoolNode('#t'), ir_cond)
+        # then branch
+        if_var = self._builder.AllocateTmpVar()
+        ir_then, then_stmt_list = self._Visit(GetIfThen(node))
+        then_stmt_list.append(MakeIrAssignNode(if_var, ir_then))
+        then_stmt_list = tuple(then_stmt_list)
+        # else branch
+        ir_else, else_stmt_list = self._Visit(GetIfElse(node))
+        else_stmt_list.append(MakeIrAssignNode(if_var, ir_else))
+        else_stmt_list = tuple(else_stmt_list)
+
+        ir_if = MakeIrIfNode(ir_cond, then_stmt_list, else_stmt_list)
+        stmt_list.append(ir_if)
+        return if_var, stmt_list
 
     def VisitInt(self, node):
-        return MakeIrIntNode(GetIntX(node))
+        return MakeIrIntNode(GetIntX(node)), []
 
     def VisitVar(self, node):
-        return self._builder.GetVar(GetNodeVar(node))
+        return self._builder.GetVar(GetNodeVar(node)), []
+
+    def VisitBool(self, node):
+        return MakeIrBoolNode(GetNodeBool(node)), []
 
 
 def Flatten(sch_ast):

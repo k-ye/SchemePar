@@ -11,7 +11,7 @@ if __name__ == '__main__':
     test_data = '''
     ; a test Scheme program using R1 grammar
     (let ([foo 42] [bar (- 3)])
-        (+ 
+        (+
             (let ([foo 3] [bar bar]) (+ foo bar))
             foo
         )
@@ -19,16 +19,7 @@ if __name__ == '__main__':
     ; 42
     '''
     test_data = '''
-    (let ([v 1])
-        (let ([w 46])
-            (let ([x (+ v 7)]) 
-                (let ([y (+ 4 x)]) 
-                    (let ([z (+ x w)])
-                        (+ z (- y))
-                    )
-                )
-            )
-        )
+    (if (eq? #t (read_bool)) 42 0
     )
     '''
     # test_data = '(let ([x 42]) (let ([y x]) y))'
@@ -47,7 +38,7 @@ if __name__ == '__main__':
         print('---\n')
 
     PrintSourceCode('Source code', test_data)
-    
+
     test_data = LexPreprocess(test_data)
 
     lexer = SchemeLexer()
@@ -62,6 +53,7 @@ if __name__ == '__main__':
     ir_ast = Flatten(sch_ast)
     PrintSourceCode('IR source code', IrSourceCode(ir_ast))
 
+    '''
     x86_formatter = X86InternalFormatter()
     x86_ast = SelectInstruction(ir_ast)
     PrintSourceCode('X86 (Select Instruction)',
@@ -93,3 +85,4 @@ if __name__ == '__main__':
         with open(output_filename, 'w') as wf:
             wf.write(x86_src_code)
             wf.write('\n')
+    '''
