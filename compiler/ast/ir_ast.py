@@ -87,7 +87,7 @@ def MakeIrIfNode(cond, then, els):
         iter(els)
     except TypeError:
         # not iterable
-        assert False, '|then| or |els| not iterable'
+        raise RuntimeError('|then| or |els| not iterable')
     node = _MakeIrStmtNode(IF_NODE_T)
     SetProperty(node, IF_P_COND, cond)
     SetProperty(node, IF_P_THEN, then)
@@ -181,6 +181,10 @@ def MakeIrApplyNode(method, arg_list):
     return node
 
 
+def IsIrApplyNode(node):
+    return LangOf(node) == IR_LANG and TypeOf(node) == APPLY_NODE_T
+
+
 ''' IR Ast Node Visitor
 '''
 
@@ -232,6 +236,9 @@ class IrAstVisitorBase(object):
     def VisitProgram(self, node):
         return node
 
+    def VisitApply(self, node):
+        return node
+
     def VisitAssign(self, node):
         return node
 
@@ -251,9 +258,6 @@ class IrAstVisitorBase(object):
         return node
 
     def VisitBool(self, node):
-        return node
-
-    def VisitApply(self, node):
         return node
 
 

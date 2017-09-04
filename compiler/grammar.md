@@ -69,7 +69,7 @@ arg : int | var | '#t' | '#f'
 
 ## X86 Assembly
 
-- version: X0
+- version: X1
 - There is no lexing/parsing for X86 Assembly. We generate its AST from IR's AST directly.
 - BNF
 
@@ -85,24 +85,32 @@ instr_list
     | instr instr_list
 
 instr
-    : ( ADD arg arg )
-    | ( SUB arg arg )
-    | ( NEG arg )
-    | ( MOV arg arg )
-    | ( CALL LABEL )
-    | ( PUSH arg )
-    | ( POP arg )
-    | ( RET )
+    : ( 'add' arg arg )
+    | ( 'sub' arg arg )
+    | ( 'neg' arg )
+    | ( 'mov' arg arg )
+    | ( 'call' LABEL )
+    | ( 'push' arg )
+    | ( 'pop' arg )
+    | ( 'ret' )
+    | ( 'xor' arg arg )
+    | ( 'cmp' arg arg )
+    | ( 'set' cc arg )
+    | ( 'movzb' arg arg )
+    | ( 'jmp' label )
+    | ( 'jmp-if' cc label )
+    | ( 'label' label )
 
 arg 
     : INT
-    | REGISTER
+    | register
     | deref
     | _var # only used internally
+    | BYTE-REG register
 
 deref
-    : INT ( REGISTER )
-    : MINUS INT ( REGISTER )
+    : INT ( register )
+    : MINUS INT ( register )
 
 _var : VAR
 

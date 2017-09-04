@@ -162,6 +162,12 @@ class SchEvalTypes(object):
         return SchEvalTypes._rtm_types[method]
 
 
+_SCH_CMP_OPS = {'eq?', '<', '<=', '>', '>='}
+
+
+def IsSchCmpOp(op):
+    return op in _SCH_CMP_OPS
+
 ''' Scheme Ast Node Visitor
 '''
 

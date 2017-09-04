@@ -134,7 +134,7 @@ class _LowLvPassBuilder(object):
         return self._stmt_list
 
     def AddVar(self, var):
-        assert not self.ContainsVar(var)
+        assert not self.ContainsVar(var), var
         var_node = self._CreateVar(var)
         self._var_dict[var] = var_node
         self._var_name_list.append(var)
@@ -212,25 +212,6 @@ class _SchToIrVarBuilder(_LowLvPassVarBuilder):
         return self.AddVar(tmp_var)
 
 
-class _SchToIrStmtBuilder(object):
-
-    def __init__(self):
-        self._stmt_list = []
-
-    @property
-    def stmt_list(self):
-        return self._stmt_list
-
-    def AddStmt(self, stmt):
-        self._stmt_list.append(stmt)
-
-    def GetStmt(self, index):
-        return self._stmt_list[index]
-
-    def ChangeStmt(self, index, stmt):
-        self._stmt_list[index] = stmt
-
-
 class _FlattenVisitor(SchAstVisitorBase):
 
     def __init__(self):
@@ -257,7 +238,12 @@ class _FlattenVisitor(SchAstVisitorBase):
             assert IsIrArgNode(ir_expr)
             stmt_list += expr_stmt_list
             new_arg_list.append(ir_expr)
-        ir_apply = MakeIrApplyNode(GetNodeMethod(node), new_arg_list)
+        method, ir_apply = GetNodeMethod(node), None
+        if IsSchCmpOp(method):
+            assert len(new_arg_list) == 2
+            ir_apply = MakeIrCmpNode(method, *new_arg_list)
+        else:
+            ir_apply = MakeIrApplyNode(method, new_arg_list)
         tmp_var = self._builder.AllocateTmpVar()
         stmt_list.append(MakeIrAssignNode(tmp_var, ir_apply))
         return tmp_var, stmt_list
@@ -285,6 +271,9 @@ class _FlattenVisitor(SchAstVisitorBase):
         ir_cond, cond_stmt_list = self._Visit(GetIfCond(node))
         assert IsIrArgNode(ir_cond)
         stmt_list += cond_stmt_list
+        # if_cond_tmp = self._builder.AllocateTmpVar()
+        # stmt_list.append(MakeIrAssignNode(
+        #     if_cond_tmp, MakeIrCmpNode('eq?', MakeIrBoolNode('#t'), ir_cond)))
         ir_cond = MakeIrCmpNode('eq?', MakeIrBoolNode('#t'), ir_cond)
         # then branch
         if_var = self._builder.AllocateTmpVar()
@@ -327,6 +316,10 @@ def Flatten(sch_ast):
 
 class _IrToX86Builder(_LowLvPassBuilder):
 
+    def __init__(self):
+        super(_IrToX86Builder, self).__init__()
+        self._next_label = 0
+
     def _CreateVar(self, var):
         return MakeX86VarNode(var)
 
@@ -335,12 +328,24 @@ class _IrToX86Builder(_LowLvPassBuilder):
         assert IsX86InstrNode(instr) or IsX86SpecialInstrNode(instr)
         super(_IrToX86Builder, self).AddStmt(instr)
 
+    def AddLabelDef(self, label):
+        assert IsX86LabelDefNode(label)
+        super(_IrToX86Builder, self).AddStmt(label)
+
     @property
     def instr_list(self):
         return self.stmt_list
 
     def GetX86Ast(self):
         return MakeX86ProgramNode(-1, self.var_list, self.instr_list)
+
+    def GetIfLabelPair(self):
+        idx = self._next_label
+        self._next_label += 1
+        t = 'label_{}_true'.format(idx)
+        f = 'label_{}_false'.format(idx)
+        s = 'label_{}_sink'.format(idx)
+        return t, f, s
 
 
 class _SelectInstructionVisitor(IrAstVisitorBase):
@@ -354,11 +359,14 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
     def _EndVisit(self, node, visit_result):
         return self._builder.GetX86Ast()
 
+    def _VisitStmtList(self, stmt_list):
+        for stmt in stmt_list:
+            self._Visit(stmt)
+
     def VisitProgram(self, node):
         # prologue, this should be added later for all function call
         self._builder.AddInstr(MakeX86CallCNode(X86_CALLC_PROLOGUE))
-        for stmt in GetNodeStmtList(node):
-            self._Visit(stmt)
+        self._VisitStmtList(GetNodeStmtList(node))
 
         # call the runtime PrintPtr
         # movq    %rax, %rdi
@@ -367,11 +375,6 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
         assert IsX86SiRetNode(last_stmt)
         SetX86SiRetFromFunc(last_stmt, False)  # return from program
         self._builder.ChangeStmt(-1, last_stmt)
-        # instr = MakeX86InstrNode(x86c.MOVE, MakeX86RegNode(
-        #     x86c.RAX), MakeX86RegNode(x86c.RDI))
-        # self._builder.AddInstr(instr)
-        # instr = MakeX86InstrNode(x86c.CALL, MakeX86LabelNode('print_ptr'))
-        # self._builder.AddInstr(instr)
 
         # epilogue, this should be added later for all function call
         self._builder.AddInstr(MakeX86CallCNode(X86_CALLC_EPILOGUE))
@@ -380,16 +383,28 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
             GetNodeVarList(node))
 
     def VisitAssign(self, node):
-        var_name = GetNodeVar(GetNodeVar(node))
-        x86_asn_var = self._builder.AddVar(var_name)
+        var_name, x86_asn_var = GetNodeVar(GetNodeVar(node)), None
+        try:
+            x86_asn_var = self._builder.GetVar(var_name)
+        except KeyError:
+            x86_asn_var = self._builder.AddVar(var_name)
         ir_expr = GetIrAssignExpr(node)
 
         if IsIrArgNode(ir_expr):
             # non-standard visitor pattern call
             self._SelectForArg(ir_expr, x86_asn_var)
-        elif TypeOf(ir_expr) == APPLY_NODE_T:
+        elif IsIrApplyNode(ir_expr):
             # non-standard visitor pattern call
             self._SelectForApply(ir_expr, x86_asn_var)
+        elif IsIrCmpNode(ir_expr):
+            self.VisitCmp(ir_expr)
+            cmp_op, byte_reg = GetIrCmpOp(ir_expr), MakeX86ByteRegNode(x86c.RAX)
+            # needs special handling for cmp statement
+            x86_set = MakeX86InstrNode(
+                EncodeCcIntoInstr(x86c.SET, x86c.CmpOpToCc(cmp_op)), byte_reg)
+            self._builder.AddInstr(x86_set)
+            self._builder.AddInstr(MakeX86InstrNode(
+                x86c.MOVEZB, byte_reg, x86_asn_var))
         else:
             raise RuntimeError(
                 'Unknown type={} in IrAssignNode'.format(expr_type))
@@ -403,33 +418,6 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
         # let the calling convention epilogue handles the actual 'ret'
         # instruction
 
-    def VisitInt(self, node):
-        raise RuntimeError("Shouldn't get called")
-
-    def VisitVar(self, node):
-        raise RuntimeError("Shouldn't get called")
-
-    def _MakeX86ArgNode(self, node):
-        assert IsIrArgNode(node)
-        ndtype = TypeOf(node)
-        if ndtype == INT_NODE_T:
-            return MakeX86IntNode(GetIntX(node))
-        elif ndtype == VAR_NODE_T:
-            return self._builder.GetVar(GetNodeVar(node))
-        raise RuntimeError('type={}'.format(ndtype))
-
-    def _SelectForArg(self, node, x86_asn_var):
-        assert LangOf(x86_asn_var) == X86_LANG
-        assert TypeOf(x86_asn_var) == VAR_NODE_T
-        if TypeOf(node) == VAR_NODE_T:
-            # check that there is no side effect, meaning that assignment like
-            # 'x <- x + 42' cannot exist at this point.
-            assert GetNodeVar(node) != GetNodeVar(x86_asn_var)
-
-        x86_arg = self._MakeX86ArgNode(node)
-        x86_instr = MakeX86InstrNode(x86c.MOVE, x86_arg, x86_asn_var)
-        self._builder.AddInstr(x86_instr)
-
     def VisitApply(self, node):
         raise RuntimeError("Shouldn't get called")
 
@@ -441,10 +429,11 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
         method = GetNodeMethod(node)
         ir_operands = GetNodeArgList(node)
 
-        if method == 'read':
+        if method in SchRtmFns():
+            method = 'read_int' if method == 'read' else method
             # runtime provides read_int function
             x86_instr = MakeX86InstrNode(
-                x86c.CALL, MakeX86LabelNode('read_int'))
+                x86c.CALL, MakeX86LabelRefNode(method))
             builder.AddInstr(x86_instr)
             x86_instr = MakeX86InstrNode(
                 x86c.MOVE, MakeX86RegNode(x86c.RAX), x86_asn_var)
@@ -463,6 +452,57 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
         else:
             raise RuntimeError(
                 'Unknown method={} in IrApplyNode'.format(method))
+
+    def VisitIf(self, node):
+        t_label, f_label, sink_label = self._builder.GetIfLabelPair()
+        self.VisitCmp(GetIfCond(node))
+        self._builder.AddInstr(MakeX86InstrNode(
+            EncodeCcIntoInstr(x86c.JMP_IF, x86c.CC_EQ), MakeX86LabelRefNode(t_label)))
+        self._builder.AddLabelDef(MakeX86LabelDefNode(f_label))
+        self._VisitStmtList(GetIfElse(node))
+        self._builder.AddLabelDef(MakeX86LabelDefNode(t_label))
+        self._VisitStmtList(GetIfThen(node))
+        self._builder.AddLabelDef(MakeX86LabelDefNode(sink_label))
+
+    def VisitCmp(self, node):
+        assert IsIrCmpNode(node)
+        x86_lhs = self._MakeX86ArgNode(GetIrCmpLhs(node))
+        x86_rhs = self._MakeX86ArgNode(GetIrCmpRhs(node))
+        # |x86_lhs| and |x86_rhs| are flipped on purpose!
+        self._builder.AddInstr(MakeX86InstrNode(x86c.CMP, x86_rhs, x86_lhs))
+
+    def VisitInt(self, node):
+        raise RuntimeError("Shouldn't get called")
+
+    def VisitVar(self, node):
+        raise RuntimeError("Shouldn't get called")
+
+    def VisitBool(self, node):
+        raise RuntimeError("Shouldn't get called")
+
+    def _MakeX86ArgNode(self, node):
+        assert IsIrArgNode(node)
+        ndtype = TypeOf(node)
+        if ndtype == INT_NODE_T:
+            return MakeX86IntNode(GetIntX(node))
+        elif ndtype == BOOL_NODE_T:
+            bool_to_int = 1 if GetNodeBool(node) == '#t' else 0
+            return MakeX86IntNode(bool_to_int)
+        elif ndtype == VAR_NODE_T:
+            return self._builder.GetVar(GetNodeVar(node))
+        raise RuntimeError('type={}'.format(ndtype))
+
+    def _SelectForArg(self, node, x86_asn_var):
+        assert LangOf(x86_asn_var) == X86_LANG
+        assert TypeOf(x86_asn_var) == VAR_NODE_T
+        if TypeOf(node) == VAR_NODE_T:
+            # check that there is no side effect, meaning that assignment like
+            # 'x <- x + 42' cannot exist at this point.
+            assert GetNodeVar(node) != GetNodeVar(x86_asn_var)
+
+        x86_arg = self._MakeX86ArgNode(node)
+        x86_instr = MakeX86InstrNode(x86c.MOVE, x86_arg, x86_asn_var)
+        self._builder.AddInstr(x86_instr)
 
 
 def SelectInstruction(ir_ast, formatter=None):
@@ -719,7 +759,7 @@ def _ReplaceX86SiRets(x86_ast):
                     x86c.MOVE, ret_arg, MakeX86RegNode(x86c.RDI))
                 new_instr_list.append(instr)
                 instr = MakeX86InstrNode(
-                    x86c.CALL, MakeX86LabelNode('print_ptr'))
+                    x86c.CALL, MakeX86LabelRefNode('print_ptr'))
                 new_instr_list.append(instr)
                 instr = MakeX86InstrNode(
                     x86c.MOVE, MakeX86IntNode(0), MakeX86RegNode(x86c.RAX))

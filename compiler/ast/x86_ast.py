@@ -6,13 +6,14 @@ from src_code_gen import *
 '''
 X86_LANG = 'x86'
 X86_REG_NODE_T = 'reg'
+X86_BYTE_REG_NODE_T = 'byte_reg'
 X86_DEREF_NODE_T = 'deref'
 X86_INSTR_NODE_T = 'instr'
-X86_LABEL_NODE_T = 'label'
+X86_LABEL_REF_NODE_T = 'label_ref'
+X86_LABEL_DEF_NODE_T = 'label_def'
 X86_CALLC_NODE_T = 'calling_convention'
 X86_SI_RET_NODE_T = 'select_instr_ret'
-# X86_PROLOGUE_NODE_T = 'prologue'
-# X86_EPILOGUE_NODE_T = 'epilogue'
+
 
 _X86_CALLC_P_LOGUE = 'logue_type'
 X86_CALLC_PROLOGUE = 'prologue'
@@ -154,14 +155,24 @@ def IsX86RegNode(node):
 
 def GetX86Reg(node):
     assert LangOf(node) == X86_LANG and TypeOf(
-        node) in {X86_REG_NODE_T, X86_DEREF_NODE_T}
+        node) in {X86_REG_NODE_T, X86_DEREF_NODE_T, X86_BYTE_REG_NODE_T}
     return GetProperty(node, _X86_P_REG)
 
 
 def SetX86Reg(node, reg):
     assert LangOf(node) == X86_LANG and TypeOf(
-        node) in {X86_REG_NODE_T, X86_DEREF_NODE_T}
+        node) in {X86_REG_NODE_T, X86_DEREF_NODE_T, X86_BYTE_REG_NODE_T}
     SetProperty(node, _X86_P_REG, reg)
+
+
+def MakeX86ByteRegNode(reg):
+    node = _MakeX86ArgNode(X86_BYTE_REG_NODE_T)
+    SetProperty(node, _X86_P_REG, reg)
+    return node
+
+
+def IsX86ByteRegNode(node):
+    return IsX86Node(node) and TypeOf(node) == X86_BYTE_REG_NODE_T
 
 
 def MakeX86DerefNode(reg, offset):
@@ -195,19 +206,31 @@ def IsX86VarNode(node):
     return IsX86Node(node) and TypeOf(node) == VAR_NODE_T
 
 
-def MakeX86LabelNode(label):
-    node = _MakeX86ArgNode(X86_LABEL_NODE_T)
+def MakeX86LabelDefNode(label):
+    node = _MakeX86Node(X86_LABEL_DEF_NODE_T, _NODE_TC)
+    SetProperty(node, _X86_LABEL_P_LABEL, label)
+    return node
+
+
+def IsX86LabelDefNode(node):
+    return LangOf(node) == X86_LANG and TypeOf(node) == X86_LABEL_DEF_NODE_T
+
+
+def MakeX86LabelRefNode(label):
+    node = _MakeX86ArgNode(X86_LABEL_REF_NODE_T)
     SetProperty(node, _X86_LABEL_P_LABEL, label)
     return node
 
 
 def GetX86Label(node):
-    assert LangOf(node) == X86_LANG and TypeOf(node) == X86_LABEL_NODE_T
+    assert LangOf(node) == X86_LANG
+    assert TypeOf(node) in {X86_LABEL_DEF_NODE_T, X86_LABEL_REF_NODE_T}
     return GetProperty(node, _X86_LABEL_P_LABEL)
 
 
 def SetX86Label(node, label):
-    assert LangOf(node) == X86_LANG and TypeOf(node) == X86_LABEL_NODE_T
+    assert LangOf(node) == X86_LANG
+    assert TypeOf(node) in {X86_LABEL_DEF_NODE_T, X86_LABEL_REF_NODE_T}
     SetProperty(node, _X86_LABEL_P_LABEL, label)
 
 
@@ -269,6 +292,13 @@ def IsX86SpecialInstrNode(node):
     return IsX86CallCNode(node) or IsX86SiRetNode(node)
 
 
+def EncodeCcIntoInstr(instr, cc):
+    return '{}::{}'.format(instr, cc)
+
+
+def DecodeCcFromInstr(instr):
+    return instr.split('::')
+
 ''' X86 Ast Node Visitor
 '''
 
@@ -288,7 +318,8 @@ class X86AstVisitorBase(object):
 
     def _Visit(self, node):
         assert LangOf(node) == X86_LANG, \
-            'lang={}, type={}, node={}'.format(LangOf(node), TypeOf(node), str(node))
+            'lang={}, type={}, node={}'.format(
+                LangOf(node), TypeOf(node), str(node))
         ndtype = TypeOf(node)
         result = None
         if ndtype == PROGRAM_NODE_T:
@@ -301,10 +332,14 @@ class X86AstVisitorBase(object):
             result = self.VisitVar(node)
         elif ndtype == X86_REG_NODE_T:
             result = self.VisitReg(node)
+        elif ndtype == X86_BYTE_REG_NODE_T:
+            result = self.VisitByteReg(node)
         elif ndtype == X86_DEREF_NODE_T:
             result = self.VisitDeref(node)
-        elif ndtype == X86_LABEL_NODE_T:
-            result = self.VisitLabel(node)
+        elif ndtype == X86_LABEL_REF_NODE_T:
+            result = self.VisitLabelRef(node)
+        elif ndtype == X86_LABEL_DEF_NODE_T:
+            result = self.VisitLabelDef(node)
         elif ndtype == X86_CALLC_NODE_T:
             result = self.VisitCallC(node)
         elif ndtype == X86_SI_RET_NODE_T:
@@ -328,10 +363,16 @@ class X86AstVisitorBase(object):
     def VisitReg(self, node):
         return node
 
+    def VisitByteReg(self, node):
+        return node
+
     def VisitDeref(self, node):
         return node
 
-    def VisitLabel(self, node):
+    def VisitLabelRef(self, node):
+        return node
+
+    def VisitLabelDef(self, node):
         return node
 
     def VisitCallC(self, node):
@@ -352,39 +393,42 @@ class _X86SourceCodeVisitor(X86AstVisitorBase):
 
     def _FakeVisit(self, node, builder):
         assert builder is self._builder
-        return self._Visit(node)
+        self._Visit(node)
 
     def VisitProgram(self, node):
         self._formatter.FormatProgram(
             node, self._builder, self._FakeVisit)
-        return node
 
     def VisitInstr(self, node):
         instr = GetX86Instr(node)
         operand_list = GetX86InstrOperandList(node)
         self._formatter.AddInstr(
             instr, operand_list, self._builder, self._FakeVisit)
-        return node
 
     def _VisitArg(self, node, val):
         self._formatter.AddArg(TypeOf(node), val, self._builder)
-        return node
 
     def VisitInt(self, node):
-        return self._VisitArg(node, GetIntX(node))
+        self._VisitArg(node, GetIntX(node))
 
     def VisitVar(self, node):
-        return self._VisitArg(node, GetNodeVar(node))
+        self._VisitArg(node, GetNodeVar(node))
 
     def VisitReg(self, node):
-        return self._VisitArg(node, GetX86Reg(node))
+        self._VisitArg(node, GetX86Reg(node))
+
+    def VisitByteReg(self, node):
+        self._VisitArg(node, GetX86Reg(node))
 
     def VisitDeref(self, node):
         val = (GetX86Reg(node), GetX86DerefOffset(node))
-        return self._VisitArg(node, val)
+        self._VisitArg(node, val)
 
-    def VisitLabel(self, node):
-        return self._VisitArg(node, GetX86Label(node))
+    def VisitLabelRef(self, node):
+        self._VisitArg(node, GetX86Label(node))
+
+    def VisitLabelDef(self, node):
+        self._builder.Append('label {}:'.format(GetX86Label(node)))
 
     def VisitCallC(self, node):
         logue = GetX86CallCLogue(node)
@@ -454,7 +498,7 @@ class MacX86Formatter(object):
     def _Reg(self, reg):
         return '%' + reg
 
-    def _Label(self, label):
+    def _LabelRef(self, label):
         return '_' + label
 
     def AddArg(self, t, var, builder):
@@ -466,8 +510,8 @@ class MacX86Formatter(object):
             argstr = '${}'.format(var)
         elif t == X86_REG_NODE_T:
             argstr = self._Reg(var)
-        elif t == X86_LABEL_NODE_T:
-            argstr = self._Label(var)
+        elif t == X86_LABEL_REF_NODE_T:
+            argstr = self._LabelRef(var)
         else:
             raise RuntimeError('type={} var={}'.format(t, var))
         builder.Append(argstr, append_whitespace=False)

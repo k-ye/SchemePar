@@ -19,8 +19,7 @@ if __name__ == '__main__':
     ; 42
     '''
     test_data = '''
-    (if (eq? #t (read_bool)) 42 0
-    )
+    (if (< 4 3) (read_bool) #t)
     '''
     # test_data = '(let ([x 42]) (let ([y x]) y))'
     input_filename = None
@@ -53,12 +52,11 @@ if __name__ == '__main__':
     ir_ast = Flatten(sch_ast)
     PrintSourceCode('IR source code', IrSourceCode(ir_ast))
 
-    '''
     x86_formatter = X86InternalFormatter()
     x86_ast = SelectInstruction(ir_ast)
     PrintSourceCode('X86 (Select Instruction)',
                     X86SourceCode(x86_ast, x86_formatter))
-
+    '''
     x86_ast = UncoverLive(x86_ast)
     x86_formatter.include_live_afters = True
     PrintSourceCode('X86 (Uncover Live)',
