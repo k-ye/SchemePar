@@ -56,6 +56,7 @@ if __name__ == '__main__':
     x86_ast = SelectInstruction(ir_ast)
     PrintSourceCode('X86 (Select Instruction)',
                     X86SourceCode(x86_ast, x86_formatter))
+
     '''
     x86_ast = UncoverLive(x86_ast)
     x86_formatter.include_live_afters = True

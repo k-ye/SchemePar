@@ -62,6 +62,10 @@ def MakeSchBoolNode(b):
     return node
 
 
+def IsBinLogicalOp(op):
+    return op in {'and', 'or'}
+
+
 def MakeSchApplyNode(method, expr_list):
     node = _MakeSchExprNode(APPLY_NODE_T)
     SetProperties(node, {P_METHOD: method, _SCH_APPLY_P_EXPR_LIST: expr_list})
@@ -198,7 +202,7 @@ class SchAstVisitorBase(object):
         '''
         Do NOT override
         '''
-        assert LangOf(node) == SCH_LANG
+        assert LangOf(node) == SCH_LANG, LangOf(node)
         ndtype = TypeOf(node)
         result = None
         if ndtype == PROGRAM_NODE_T:

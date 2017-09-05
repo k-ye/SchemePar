@@ -91,12 +91,21 @@ class _UniquifyVisitor(SchAstVisitorBase):
             SetSchLetBody(node, self._Visit(GetSchLetBody(node)))
         return node
 
+    def VisitIf(self, node):
+        SetIfCond(node, self._Visit(GetIfCond(node)))
+        SetIfThen(node, self._Visit(GetIfThen(node)))
+        SetIfElse(node, self._Visit(GetIfElse(node)))
+        return node
+
     def VisitInt(self, node):
         return node
 
     def VisitVar(self, node):
         old_var = GetNodeVar(node)
         SetNodeVar(node, self._env.Get(old_var))
+        return node
+
+    def VisitBool(self, node):
         return node
 
 
@@ -230,20 +239,37 @@ class _FlattenVisitor(SchAstVisitorBase):
         stmt_list.append(MakeIrReturnNode(ir_expr))
         return MakeIrProgramNode(self._builder.var_list, stmt_list), stmt_list
 
+    def _VisitBinLogicalOp(self, node):
+        method = GetNodeMethod(node)
+        lhs, rhs = GetSchApplyExprList(node)
+        translated = None
+        if method == 'and':
+            inner = MakeSchIfNode(rhs, MakeSchBoolNode(
+                '#t'), MakeSchBoolNode('#f'))
+            translated = MakeSchIfNode(lhs, inner, MakeSchBoolNode('#f'))
+        elif method == 'or':
+            inner = MakeSchIfNode(rhs, MakeSchBoolNode(
+                '#t'), MakeSchBoolNode('#f'))
+            translated = MakeSchIfNode(lhs, MakeSchBoolNode('#t'), inner)
+        return self._Visit(translated)
+
     def VisitApply(self, node):
-        new_arg_list = []
-        stmt_list = []
+        method = GetNodeMethod(node)
+        if IsBinLogicalOp(method):
+            return self._VisitBinLogicalOp(node)
+
+        ir_arg_list, stmt_list = [], []
         for expr in GetSchApplyExprList(node):
             ir_expr, expr_stmt_list = self._Visit(expr)
             assert IsIrArgNode(ir_expr)
             stmt_list += expr_stmt_list
-            new_arg_list.append(ir_expr)
-        method, ir_apply = GetNodeMethod(node), None
+            ir_arg_list.append(ir_expr)
+        ir_apply = None
         if IsSchCmpOp(method):
-            assert len(new_arg_list) == 2
-            ir_apply = MakeIrCmpNode(method, *new_arg_list)
+            assert len(ir_arg_list) == 2
+            ir_apply = MakeIrCmpNode(method, *ir_arg_list)
         else:
-            ir_apply = MakeIrApplyNode(method, new_arg_list)
+            ir_apply = MakeIrApplyNode(method, ir_arg_list)
         tmp_var = self._builder.AllocateTmpVar()
         stmt_list.append(MakeIrAssignNode(tmp_var, ir_apply))
         return tmp_var, stmt_list
