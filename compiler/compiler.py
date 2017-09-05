@@ -475,6 +475,11 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
             x86_instr = MakeX86InstrNode(
                 x86c.ADD, self._MakeX86ArgNode(ir_operands[1]), x86_asn_var)
             builder.AddInstr(x86_instr)
+        elif method == 'not':
+            self._SelectForArg(ir_operands[0], x86_asn_var)
+            x86_instr = MakeX86InstrNode(
+                x86c.XOR, MakeX86IntNode(1), x86_asn_var)
+            builder.AddInstr(x86_instr)
         else:
             raise RuntimeError(
                 'Unknown method={} in IrApplyNode'.format(method))
