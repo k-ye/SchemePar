@@ -491,6 +491,8 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
             EncodeCcIntoInstr(x86c.JMP_IF, x86c.CC_EQ), MakeX86LabelRefNode(t_label)))
         self._builder.AddLabelDef(MakeX86LabelDefNode(f_label))
         self._VisitStmtList(GetIfElse(node))
+        self._builder.AddInstr(MakeX86InstrNode(
+            x86c.JMP, MakeX86LabelRefNode(sink_label)))
         self._builder.AddLabelDef(MakeX86LabelDefNode(t_label))
         self._VisitStmtList(GetIfThen(node))
         self._builder.AddLabelDef(MakeX86LabelDefNode(sink_label))
