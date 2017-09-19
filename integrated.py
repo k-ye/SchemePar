@@ -19,7 +19,7 @@ if __name__ == '__main__':
     ; 42
     '''
     test_data = '''
-    (if (< 4 3) (read_bool) #t)
+    (if (not #t) (read_bool) #t)
     '''
     # test_data = '(let ([x 42]) (let ([y x]) y))'
     input_filename = None

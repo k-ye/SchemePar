@@ -13,6 +13,7 @@ X86_LABEL_REF_NODE_T = 'label_ref'
 X86_LABEL_DEF_NODE_T = 'label_def'
 X86_CALLC_NODE_T = 'calling_convention'
 X86_SI_RET_NODE_T = 'select_instr_ret'
+X86_TMP_IF_NODE_T = 'tmp_if'
 
 
 _X86_CALLC_P_LOGUE = 'logue_type'
@@ -234,6 +235,64 @@ def SetX86Label(node, label):
     SetProperty(node, _X86_LABEL_P_LABEL, label)
 
 
+_X86_TMP_IF_P_THEN = 'then'
+_X86_TMP_IF_P_ELSE = 'else'
+_X86_TMP_IF_P_THEN_LA = 'then_la'
+_X86_TMP_IF_P_ELSE_LA = 'else_la'
+
+
+def MakeX86TmpIfNode(then, els):
+    node = _MakeX86Node(X86_TMP_IF_NODE_T, _NODE_TC)
+    SetProperty(node, _X86_TMP_IF_P_THEN, then)
+    SetProperty(node, _X86_TMP_IF_P_ELSE, els)
+    SetProperty(node, _X86_TMP_IF_P_THEN_LA, set())
+    SetProperty(node, _X86_TMP_IF_P_ELSE_LA, set())
+    return node
+
+
+def IsX86TmpIfNode(node):
+    return LangOf(node) == X86_LANG and TypeOf(node) == X86_TMP_IF_NODE_T
+
+
+def GetX86TmpIfThen(node):
+    assert IsX86TmpIfNode(node)
+    return GetProperty(node, _X86_TMP_IF_P_THEN)
+
+
+def SetX86TmpIfThen(node, then):
+    assert IsX86TmpIfNode(node)
+    SetProperty(node, _X86_TMP_IF_P_THEN, then)
+
+
+def GetX86TmpIfElse(node):
+    assert IsX86TmpIfNode(node)
+    return GetProperty(node, _X86_TMP_IF_P_ELSE)
+
+
+def SetX86TmpIfElse(node, els):
+    assert IsX86TmpIfNode(node)
+    SetProperty(node, _X86_TMP_IF_P_ELSE, els)
+
+
+def GetX86TmpIfThenLiveAfter(node):
+    assert IsX86TmpIfNode(node)
+    return GetProperty(node, _X86_TMP_IF_P_THEN_LA)
+
+
+def SetX86TmpIfThenLiveAfter(node, then_la):
+    assert IsX86TmpIfNode(node)
+    SetProperty(node, _X86_TMP_IF_P_THEN_LA, then_la)
+
+
+def GetX86TmpIfElseLiveAfter(node):
+    assert IsX86TmpIfNode(node)
+    return GetProperty(node, _X86_TMP_IF_P_ELSE_LA)
+
+
+def SetX86TmpIfElseLiveAfter(node, else_la):
+    assert IsX86TmpIfNode(node)
+    SetProperty(node, _X86_TMP_IF_P_ELSE_LA, else_la)
+
 # X86 Prologue/Epilogue node are placeholders generated
 # during SelectionInstruction pass, because at that
 # time we don't know the real stack size yet.
@@ -305,6 +364,9 @@ def DecodeCcFromInstr(instr):
 
 class X86AstVisitorBase(object):
 
+    def __init__(self):
+        self._allow_tmp_if = False
+
     def Visit(self, node):
         self._BeginVisit()
         visit_result = self._Visit(node)
@@ -344,6 +406,8 @@ class X86AstVisitorBase(object):
             result = self.VisitCallC(node)
         elif ndtype == X86_SI_RET_NODE_T:
             result = self.VisitSiRet(node)
+        elif ndtype == X86_TMP_IF_NODE_T and self._allow_tmp_if:
+            result = self.VisitTmpIf(node)
         else:
             raise RuntimeError("Unknown X86 node type={}".format(ndtype))
         return result
@@ -381,12 +445,16 @@ class X86AstVisitorBase(object):
     def VisitSiRet(self, node):
         return node
 
+    def VisitTmpIf(self, node):
+        return node
+
 
 class _X86SourceCodeVisitor(X86AstVisitorBase):
 
     def __init__(self, formatter):
         super(_X86SourceCodeVisitor, self).__init__()
         self._formatter = formatter
+        self._allow_tmp_if = True
 
     def _BeginVisit(self):
         self._builder = AstSourceCodeBuilder()
@@ -442,6 +510,24 @@ class _X86SourceCodeVisitor(X86AstVisitorBase):
         self._Visit(ret_arg)
         self._builder.Append(')')
 
+    def VisitTmpIf(self, node):
+        builder = self._builder
+        builder.Append('( __tmp_if__')
+        with builder.Indent():
+            builder.NewLine()
+            builder.Append('# then')
+            then_instr_list = GetX86TmpIfThen(node)
+            self._formatter.FormatInstrList(
+                then_instr_list, None, builder, self._FakeVisit)
+
+            builder.NewLine()
+            builder.Append('# else')
+            else_instr_list = GetX86TmpIfElse(node)
+            self._formatter.FormatInstrList(
+                else_instr_list, None, builder, self._FakeVisit)
+        builder.NewLine()
+        builder.Append(')')
+
     def BuildSourceCode(self):
         return self._builder.Build()
 
@@ -476,14 +562,25 @@ class X86InternalFormatter(object):
         # instructions + live afters
         builder.NewLine()
         builder.NewLine()
+
         builder.Append('# instructions')
         instr_list = GetX86ProgramInstrList(node)
         live_afters = GetX86ProgramLiveAfters(node)
-        len_live_afters = len(live_afters)
+        self.FormatInstrList(instr_list, live_afters, builder, src_code_gen)
+        # len_live_afters = len(live_afters)
+        # for i, instr in enumerate(instr_list):
+        #     builder.NewLine()
+        #     src_code_gen(instr, builder)
+        #     if self.include_live_afters and i < len_live_afters:
+        #         la = live_afters[i]
+        #         la_str = ', '.join(la)
+        #         builder.Append('( { %s } )' % la_str)
+
+    def FormatInstrList(self, instr_list, live_afters, builder, src_code_gen):
         for i, instr in enumerate(instr_list):
             builder.NewLine()
             src_code_gen(instr, builder)
-            if self.include_live_afters and i < len_live_afters:
+            if live_afters is not None and self.include_live_afters and i < len_live_afters:
                 la = live_afters[i]
                 la_str = ', '.join(la)
                 builder.Append('( { %s } )' % la_str)
@@ -494,6 +591,7 @@ class MacX86Formatter(object):
     def __init__(self):
         self.AddInstr = self._AddInstrDefault
         # self.AddInstr = self._AddInstrPretty
+        self._allow_tmp_if = False
 
     def _Reg(self, reg):
         return '%' + reg

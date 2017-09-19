@@ -20,7 +20,7 @@ the *SAME* scope, type matching. We leave that for later excercises.
 
 
 ''' Uniquify pass
-This pass uniquifies all the variable names in the Scheme AST. In another word, 
+This pass uniquifies all the variable names in the Scheme AST. In another word,
 it does an alpha-reduction on the entire AST.
 
 - Scheme version: R1
@@ -339,39 +339,22 @@ def Flatten(sch_ast):
 '''Select-instruction pass
 '''
 
+# def GetIfLabelPair(self):
+#     idx = self._next_label
+#     self._next_label += 1
+#     t = 'label_{}_true'.format(idx)
+#     f = 'label_{}_false'.format(idx)
+#     s = 'label_{}_sink'.format(idx)
+#     return t, f, s
 
-class _IrToX86Builder(_LowLvPassBuilder):
+
+class _IrToX86VarBuilder(_LowLvPassVarBuilder):
 
     def __init__(self):
-        super(_IrToX86Builder, self).__init__()
-        self._next_label = 0
+        super(_IrToX86VarBuilder, self).__init__()
 
     def _CreateVar(self, var):
         return MakeX86VarNode(var)
-
-    def AddInstr(self, instr):
-        assert LangOf(instr) == X86_LANG
-        assert IsX86InstrNode(instr) or IsX86SpecialInstrNode(instr)
-        super(_IrToX86Builder, self).AddStmt(instr)
-
-    def AddLabelDef(self, label):
-        assert IsX86LabelDefNode(label)
-        super(_IrToX86Builder, self).AddStmt(label)
-
-    @property
-    def instr_list(self):
-        return self.stmt_list
-
-    def GetX86Ast(self):
-        return MakeX86ProgramNode(-1, self.var_list, self.instr_list)
-
-    def GetIfLabelPair(self):
-        idx = self._next_label
-        self._next_label += 1
-        t = 'label_{}_true'.format(idx)
-        f = 'label_{}_false'.format(idx)
-        s = 'label_{}_sink'.format(idx)
-        return t, f, s
 
 
 class _SelectInstructionVisitor(IrAstVisitorBase):
@@ -380,35 +363,60 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
         super(_SelectInstructionVisitor, self).__init__()
 
     def _BeginVisit(self):
-        self._builder = _IrToX86Builder()
+        # self._builder = _IrToX86Builder()
+        self._builder = _IrToX86VarBuilder()
+        self._ast = None
 
     def _EndVisit(self, node, visit_result):
-        return self._builder.GetX86Ast()
+        return self._ast
+        # return self._builder.GetX86Ast()
 
     def _VisitStmtList(self, stmt_list):
+        instr_list = []
         for stmt in stmt_list:
-            self._Visit(stmt)
+            instr_list += self._Visit(stmt)
+        return instr_list
 
     def VisitProgram(self, node):
+        instr_list = []
         # prologue, this should be added later for all function call
-        self._builder.AddInstr(MakeX86CallCNode(X86_CALLC_PROLOGUE))
-        self._VisitStmtList(GetNodeStmtList(node))
+        instr_list.append(MakeX86CallCNode(X86_CALLC_PROLOGUE))
+        instr_list += self._VisitStmtList(GetNodeStmtList(node))
 
         # call the runtime PrintPtr
         # movq    %rax, %rdi
         # callq   _PrintPtr
-        last_stmt = self._builder.GetStmt(-1)
-        assert IsX86SiRetNode(last_stmt)
-        SetX86SiRetFromFunc(last_stmt, False)  # return from program
-        self._builder.ChangeStmt(-1, last_stmt)
+        last_instr = instr_list[-1]
+        assert IsX86SiRetNode(last_instr)
+        SetX86SiRetFromFunc(last_instr, False)  # return from program
+        instr_list[-1] = last_instr
 
         # epilogue, this should be added later for all function call
-        self._builder.AddInstr(MakeX86CallCNode(X86_CALLC_EPILOGUE))
+        instr_list.append(MakeX86CallCNode(X86_CALLC_EPILOGUE))
 
-        assert len(self._builder.var_list) == len(
-            GetNodeVarList(node))
+        assert len(self._builder.var_list) == len(GetNodeVarList(node))
+        self._ast = MakeX86ProgramNode(-1, self._builder.var_list, instr_list)
+        return instr_list
+        # # prologue, this should be added later for all function call
+        # self._builder.AddInstr(MakeX86CallCNode(X86_CALLC_PROLOGUE))
+        # self._VisitStmtList(GetNodeStmtList(node))
+
+        # # call the runtime PrintPtr
+        # # movq    %rax, %rdi
+        # # callq   _PrintPtr
+        # last_stmt = self._builder.GetStmt(-1)
+        # assert IsX86SiRetNode(last_stmt)
+        # SetX86SiRetFromFunc(last_stmt, False)  # return from program
+        # self._builder.ChangeStmt(-1, last_stmt)
+
+        # # epilogue, this should be added later for all function call
+        # self._builder.AddInstr(MakeX86CallCNode(X86_CALLC_EPILOGUE))
+
+        # assert len(self._builder.var_list) == len(
+        #     GetNodeVarList(node))
 
     def VisitAssign(self, node):
+        instr_list = []
         var_name, x86_asn_var = GetNodeVar(GetNodeVar(node)), None
         try:
             x86_asn_var = self._builder.GetVar(var_name)
@@ -418,29 +426,34 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
 
         if IsIrArgNode(ir_expr):
             # non-standard visitor pattern call
-            self._SelectForArg(ir_expr, x86_asn_var)
+            instr_list = self._SelectForArg(ir_expr, x86_asn_var)
         elif IsIrApplyNode(ir_expr):
             # non-standard visitor pattern call
-            self._SelectForApply(ir_expr, x86_asn_var)
+            instr_list = self._SelectForApply(ir_expr, x86_asn_var)
         elif IsIrCmpNode(ir_expr):
-            self.VisitCmp(ir_expr)
+            instr_list = self.VisitCmp(ir_expr)
             cmp_op, byte_reg = GetIrCmpOp(ir_expr), MakeX86ByteRegNode(x86c.RAX)
             # needs special handling for cmp statement
             x86_set = MakeX86InstrNode(
                 EncodeCcIntoInstr(x86c.SET, x86c.CmpOpToCc(cmp_op)), byte_reg)
-            self._builder.AddInstr(x86_set)
-            self._builder.AddInstr(MakeX86InstrNode(
+            instr_list.append(x86_set)
+            instr_list.append(MakeX86InstrNode(
                 x86c.MOVEZB, byte_reg, x86_asn_var))
+            # self._builder.AddInstr(x86_set)
+            # self._builder.AddInstr(MakeX86InstrNode(
+            #     x86c.MOVEZB, byte_reg, x86_asn_var))
         else:
             raise RuntimeError(
                 'Unknown type={} in IrAssignNode'.format(expr_type))
+        return instr_list
 
     def VisitReturn(self, node):
         x86_arg = self._MakeX86ArgNode(GetIrReturnArg(node))
         # return value goes to %rax
         from_func = True
         x86_instr = MakeX86SiRetNode(from_func, x86_arg)
-        self._builder.AddInstr(x86_instr)
+        return [x86_instr]
+        # self._builder.AddInstr(x86_instr)
         # let the calling convention epilogue handles the actual 'ret'
         # instruction
 
@@ -454,55 +467,63 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
         builder = self._builder
         method = GetNodeMethod(node)
         ir_operands = GetNodeArgList(node)
+        instr_list = []
 
         if method in SchRtmFns():
             method = 'read_int' if method == 'read' else method
             # runtime provides read_int function
             x86_instr = MakeX86InstrNode(
                 x86c.CALL, MakeX86LabelRefNode(method))
-            builder.AddInstr(x86_instr)
+            instr_list.append(x86_instr)
             x86_instr = MakeX86InstrNode(
                 x86c.MOVE, MakeX86RegNode(x86c.RAX), x86_asn_var)
-            builder.AddInstr(x86_instr)
+            instr_list.append(x86_instr)
         elif method == '-':
             # TODO: Currently this means negation. Later on subtraction also needs
             # to be handled
-            self._SelectForArg(ir_operands[0], x86_asn_var)
+            instr_list = self._SelectForArg(ir_operands[0], x86_asn_var)
             x86_instr = MakeX86InstrNode(x86c.NEG, x86_asn_var)
-            builder.AddInstr(x86_instr)
+            instr_list.append(x86_instr)
         elif method == '+':
-            self._SelectForArg(ir_operands[0], x86_asn_var)
+            instr_list = self._SelectForArg(ir_operands[0], x86_asn_var)
             x86_instr = MakeX86InstrNode(
                 x86c.ADD, self._MakeX86ArgNode(ir_operands[1]), x86_asn_var)
-            builder.AddInstr(x86_instr)
+            instr_list.append(x86_instr)
         elif method == 'not':
-            self._SelectForArg(ir_operands[0], x86_asn_var)
+            instr_list = self._SelectForArg(ir_operands[0], x86_asn_var)
             x86_instr = MakeX86InstrNode(
                 x86c.XOR, MakeX86IntNode(1), x86_asn_var)
-            builder.AddInstr(x86_instr)
+            instr_list.append(x86_instr)
         else:
             raise RuntimeError(
                 'Unknown method={} in IrApplyNode'.format(method))
+        return instr_list
 
     def VisitIf(self, node):
-        t_label, f_label, sink_label = self._builder.GetIfLabelPair()
-        self.VisitCmp(GetIfCond(node))
-        self._builder.AddInstr(MakeX86InstrNode(
-            EncodeCcIntoInstr(x86c.JMP_IF, x86c.CC_EQ), MakeX86LabelRefNode(t_label)))
-        self._builder.AddLabelDef(MakeX86LabelDefNode(f_label))
-        self._VisitStmtList(GetIfElse(node))
-        self._builder.AddInstr(MakeX86InstrNode(
-            x86c.JMP, MakeX86LabelRefNode(sink_label)))
-        self._builder.AddLabelDef(MakeX86LabelDefNode(t_label))
-        self._VisitStmtList(GetIfThen(node))
-        self._builder.AddLabelDef(MakeX86LabelDefNode(sink_label))
+        instr_list = self.VisitCmp(GetIfCond(node))
+        then_instr_list = self._VisitStmtList(GetIfElse(node))
+        else_instr_list = self._VisitStmtList(GetIfThen(node))
+        x86_tmp_if = MakeX86TmpIfNode(then_instr_list, else_instr_list)
+        instr_list.append(x86_tmp_if)
+        return instr_list
+        # t_label, f_label, sink_label = self._builder.GetIfLabelPair()
+        # self.VisitCmp(GetIfCond(node))
+        # self._builder.AddInstr(MakeX86InstrNode(
+        #     EncodeCcIntoInstr(x86c.JMP_IF, x86c.CC_EQ), MakeX86LabelRefNode(t_label)))
+        # self._builder.AddLabelDef(MakeX86LabelDefNode(f_label))
+        # self._VisitStmtList(GetIfElse(node))
+        # self._builder.AddInstr(MakeX86InstrNode(
+        #     x86c.JMP, MakeX86LabelRefNode(sink_label)))
+        # self._builder.AddLabelDef(MakeX86LabelDefNode(t_label))
+        # self._VisitStmtList(GetIfThen(node))
+        # self._builder.AddLabelDef(MakeX86LabelDefNode(sink_label))
 
     def VisitCmp(self, node):
         assert IsIrCmpNode(node)
         x86_lhs = self._MakeX86ArgNode(GetIrCmpLhs(node))
         x86_rhs = self._MakeX86ArgNode(GetIrCmpRhs(node))
         # |x86_lhs| and |x86_rhs| are flipped on purpose!
-        self._builder.AddInstr(MakeX86InstrNode(x86c.CMP, x86_rhs, x86_lhs))
+        return [MakeX86InstrNode(x86c.CMP, x86_rhs, x86_lhs)]
 
     def VisitInt(self, node):
         raise RuntimeError("Shouldn't get called")
@@ -534,8 +555,7 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
             assert GetNodeVar(node) != GetNodeVar(x86_asn_var)
 
         x86_arg = self._MakeX86ArgNode(node)
-        x86_instr = MakeX86InstrNode(x86c.MOVE, x86_arg, x86_asn_var)
-        self._builder.AddInstr(x86_instr)
+        return [MakeX86InstrNode(x86c.MOVE, x86_arg, x86_asn_var)]
 
 
 def SelectInstruction(ir_ast, formatter=None):
