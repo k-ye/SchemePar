@@ -57,12 +57,12 @@ if __name__ == '__main__':
     PrintSourceCode('X86 (Select Instruction)',
                     X86SourceCode(x86_ast, x86_formatter))
 
-    '''
     x86_ast = UncoverLive(x86_ast)
     x86_formatter.include_live_afters = True
     PrintSourceCode('X86 (Uncover Live)',
                     X86SourceCode(x86_ast, x86_formatter))
 
+    '''
     x86_ast = AllocateRegisterOrStack(x86_ast)
     x86_formatter.include_live_afters = False
     PrintSourceCode('X86 (Allocate Register or Stack)',

@@ -245,8 +245,8 @@ def MakeX86TmpIfNode(then, els):
     node = _MakeX86Node(X86_TMP_IF_NODE_T, _NODE_TC)
     SetProperty(node, _X86_TMP_IF_P_THEN, then)
     SetProperty(node, _X86_TMP_IF_P_ELSE, els)
-    SetProperty(node, _X86_TMP_IF_P_THEN_LA, set())
-    SetProperty(node, _X86_TMP_IF_P_ELSE_LA, set())
+    SetProperty(node, _X86_TMP_IF_P_THEN_LA, None)
+    SetProperty(node, _X86_TMP_IF_P_ELSE_LA, None)
     return node
 
 
@@ -352,11 +352,18 @@ def IsX86SpecialInstrNode(node):
 
 
 def EncodeCcIntoInstr(instr, cc):
-    return '{}::{}'.format(instr, cc)
+    return '__encode_cc__{}::{}'.format(instr, cc)
 
 
 def DecodeCcFromInstr(instr):
-    return instr.split('::')
+    hdr = '__encode_cc__'
+    if not instr.startswith(hdr):
+        raise ValueError("Instruction {} is not CC decodable".format(instr))
+    instr = instr[len(hdr):]
+    result = instr.split('::')
+    if len(result) != 2:
+        raise ValueError("Instruction {} is not CC decodable".format(instr))
+    return result
 
 ''' X86 Ast Node Visitor
 '''
@@ -567,7 +574,6 @@ class X86InternalFormatter(object):
         instr_list = GetX86ProgramInstrList(node)
         live_afters = GetX86ProgramLiveAfters(node)
         self.FormatInstrList(instr_list, live_afters, builder, src_code_gen)
-        # len_live_afters = len(live_afters)
         # for i, instr in enumerate(instr_list):
         #     builder.NewLine()
         #     src_code_gen(instr, builder)
@@ -577,6 +583,9 @@ class X86InternalFormatter(object):
         #         builder.Append('( { %s } )' % la_str)
 
     def FormatInstrList(self, instr_list, live_afters, builder, src_code_gen):
+        len_live_afters = 0
+        if live_afters is not None:
+            len_live_afters = len(live_afters)
         for i, instr in enumerate(instr_list):
             builder.NewLine()
             src_code_gen(instr, builder)

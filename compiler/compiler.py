@@ -363,7 +363,6 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
         super(_SelectInstructionVisitor, self).__init__()
 
     def _BeginVisit(self):
-        # self._builder = _IrToX86Builder()
         self._builder = _IrToX86VarBuilder()
         self._ast = None
 
@@ -432,7 +431,8 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
             instr_list = self._SelectForApply(ir_expr, x86_asn_var)
         elif IsIrCmpNode(ir_expr):
             instr_list = self.VisitCmp(ir_expr)
-            cmp_op, byte_reg = GetIrCmpOp(ir_expr), MakeX86ByteRegNode(x86c.RAX)
+            cmp_op = GetIrCmpOp(ir_expr)
+            byte_reg = MakeX86ByteRegNode(x86c.RAX)
             # needs special handling for cmp statement
             x86_set = MakeX86InstrNode(
                 EncodeCcIntoInstr(x86c.SET, x86c.CmpOpToCc(cmp_op)), byte_reg)
@@ -501,6 +501,8 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
 
     def VisitIf(self, node):
         instr_list = self.VisitCmp(GetIfCond(node))
+        # the fact that we don't include jump instruction here doesn't make
+        # a difference to the live analysis
         then_instr_list = self._VisitStmtList(GetIfElse(node))
         else_instr_list = self._VisitStmtList(GetIfThen(node))
         x86_tmp_if = MakeX86TmpIfNode(then_instr_list, else_instr_list)
@@ -592,7 +594,7 @@ def _ReadVariableSet(node):
         arg_list.extend(operand_list[:(arity - 1)])
         # Instructions that read *destination*, hence MOVE is not here.
         # TODO: think about whether PUSH should also be here.
-        instrs_read_dst = {x86c.ADD, x86c.NEG, x86c.SUB}
+        instrs_read_dst = {x86c.ADD, x86c.NEG, x86c.SUB, x86c.XOR, x86c.CMP}
         if GetX86Instr(node) in instrs_read_dst:
             # must pass in a list
             arg_list.append(operand_list[-1])
@@ -606,22 +608,35 @@ def _WrittenVariableSet(node):
 
     result = set()
     operand_list = GetX86InstrOperandList(node)
-    instrs_write = {x86c.ADD, x86c.NEG, x86c.SUB, x86c.MOVE}
-    if GetX86Instr(node) in instrs_write:
+    instrs_write = {x86c.ADD, x86c.NEG, x86c.SUB,
+                    x86c.XOR, x86c.MOVE, x86c.MOVEZB}
+    instr = GetX86Instr(node)
+    if instr in instrs_write:
         # instruction only writes to dst
         _AddVarNamesToSet(result, operand_list[-1:])
     return result
 
 
-def _UncoverLive(instr_list):
+def _UncoverLive(instr_list, last_live_after=None):
     num_instr = len(instr_list)
     live_afters = [set() for _ in xrange(num_instr)]
+    live_afters[-1] = last_live_after or set()
     for i in reversed(xrange(1, num_instr)):
         instr = instr_list[i]
         # L_a(i)
         la_i = live_afters[i]
         # L_b(i) == L_a(i - 1)
-        lb_i = (la_i - _WrittenVariableSet(instr)) | _ReadVariableSet(instr)
+        lb_i = None
+        if IsX86TmpIfNode(instr):
+            then_instr_list = GetX86TmpIfThen(instr)
+            then_la_list = _UncoverLive(then_instr_list, la_i)
+            else_instr_list = GetX86TmpIfElse(instr)
+            else_la_list = _UncoverLive(else_instr_list, la_i)
+            SetX86TmpIfThenLiveAfter(instr, then_la_list)
+            SetX86TmpIfElseLiveAfter(instr, else_la_list)
+            lb_i = then_la_list[0] | else_la_list[0]
+        else:
+            lb_i = (la_i - _WrittenVariableSet(instr)) | _ReadVariableSet(instr)
         live_afters[i - 1] = lb_i
     return live_afters
 
