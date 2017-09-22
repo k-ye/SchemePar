@@ -339,14 +339,6 @@ def Flatten(sch_ast):
 '''Select-instruction pass
 '''
 
-# def GetIfLabelPair(self):
-#     idx = self._next_label
-#     self._next_label += 1
-#     t = 'label_{}_true'.format(idx)
-#     f = 'label_{}_false'.format(idx)
-#     s = 'label_{}_sink'.format(idx)
-#     return t, f, s
-
 
 class _IrToX86VarBuilder(_LowLvPassVarBuilder):
 
@@ -505,17 +497,6 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
         x86_tmp_if = MakeX86TmpIfNode(then_instr_list, else_instr_list)
         instr_list.append(x86_tmp_if)
         return instr_list
-        # t_label, f_label, sink_label = self._builder.GetIfLabelPair()
-        # self.VisitCmp(GetIfCond(node))
-        # self._builder.AddInstr(MakeX86InstrNode(
-        #     EncodeCcIntoInstr(x86c.JMP_IF, x86c.CC_EQ), MakeX86LabelRefNode(t_label)))
-        # self._builder.AddLabelDef(MakeX86LabelDefNode(f_label))
-        # self._VisitStmtList(GetIfElse(node))
-        # self._builder.AddInstr(MakeX86InstrNode(
-        #     x86c.JMP, MakeX86LabelRefNode(sink_label)))
-        # self._builder.AddLabelDef(MakeX86LabelDefNode(t_label))
-        # self._VisitStmtList(GetIfThen(node))
-        # self._builder.AddLabelDef(MakeX86LabelDefNode(sink_label))
 
     def VisitCmp(self, node):
         assert IsIrCmpNode(node)
