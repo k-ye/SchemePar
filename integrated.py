@@ -62,12 +62,12 @@ if __name__ == '__main__':
     PrintSourceCode('X86 (Uncover Live)',
                     X86SourceCode(x86_ast, x86_formatter))
 
-    '''
     x86_ast = AllocateRegisterOrStack(x86_ast)
     x86_formatter.include_live_afters = False
     PrintSourceCode('X86 (Allocate Register or Stack)',
                     X86SourceCode(x86_ast, x86_formatter))
 
+    '''
     x86_ast = PatchInstruction(x86_ast)
     PrintSourceCode('X86 (Patch Instructions)',
                     X86SourceCode(x86_ast, x86_formatter))

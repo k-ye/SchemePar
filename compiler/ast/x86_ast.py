@@ -151,7 +151,7 @@ def MakeX86RegNode(reg):
 
 
 def IsX86RegNode(node):
-    return IsX86Node(node) and TypeOf(node) == X86_REG_NODE_T
+    return IsX86Node(node) and TypeOf(node) in {X86_REG_NODE_T, X86_BYTE_REG_NODE_T}
 
 
 def GetX86Reg(node):

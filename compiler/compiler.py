@@ -439,9 +439,6 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
             instr_list.append(x86_set)
             instr_list.append(MakeX86InstrNode(
                 x86c.MOVEZB, byte_reg, x86_asn_var))
-            # self._builder.AddInstr(x86_set)
-            # self._builder.AddInstr(MakeX86InstrNode(
-            #     x86c.MOVEZB, byte_reg, x86_asn_var))
         else:
             raise RuntimeError(
                 'Unknown type={} in IrAssignNode'.format(expr_type))
@@ -594,7 +591,7 @@ def _ReadVariableSet(node):
         arg_list.extend(operand_list[:(arity - 1)])
         # Instructions that read *destination*, hence MOVE is not here.
         # TODO: think about whether PUSH should also be here.
-        instrs_read_dst = {x86c.ADD, x86c.NEG, x86c.SUB, x86c.XOR, x86c.CMP}
+        instrs_read_dst = {x86c.ADD, x86c.NEG, x86c.SUB, x86c.XOR}
         if GetX86Instr(node) in instrs_read_dst:
             # must pass in a list
             arg_list.append(operand_list[-1])
@@ -683,13 +680,8 @@ class _InferenceGraph(object):
         self._var_saturation[var_name].add(self.LocRepr(loc))
 
 
-def _BuildInterferenceGraph(x86_ast):
-    ig = _InferenceGraph()
-    for var in GetNodeVarList(x86_ast):
-        ig.AddVar(var)
-
-    instr_list = GetX86ProgramInstrList(x86_ast)
-    live_afters = _UncoverLive(instr_list)
+def _ExtendInferenceGraphByInstrList(ig, instr_list, live_afters):
+    # precondition: all the variables should be added to |ig|
     assert len(instr_list) == len(live_afters)
     for i, instr in enumerate(instr_list):
         if IsX86CallCNode(instr):
@@ -698,9 +690,16 @@ def _BuildInterferenceGraph(x86_ast):
         if IsX86SiRetNode(instr):
             for v_name in la_i:
                 ig.AddSaturation(v_name, MakeX86RegNode(x86c.RAX))
+        elif IsX86TmpIfNode(instr):
+            then_instr_list = GetX86TmpIfThen(instr)
+            then_la_list = GetX86TmpIfThenLiveAfter(instr)
+            _ExtendInferenceGraphByInstrList(ig, then_instr_list, then_la_list)
+            else_instr_list = GetX86TmpIfElse(instr)
+            else_la_list = GetX86TmpIfElseLiveAfter(instr)
+            _ExtendInferenceGraphByInstrList(ig, else_instr_list, else_la_list)
         else:
             method = GetX86Instr(instr)
-            if method == x86c.MOVE:
+            if method in {x86c.MOVE, x86c.MOVEZB}:
                 src, dst = GetX86InstrOperandList(instr)
                 dst_name = GetNodeVar(dst)
                 not_interfered = {dst_name}
@@ -709,7 +708,7 @@ def _BuildInterferenceGraph(x86_ast):
                 for v_name in la_i:
                     if v_name not in not_interfered:
                         ig.AddInterference(dst_name, v_name)
-            elif method in {x86c.ADD, x86c.SUB, x86c.NEG}:
+            elif method in {x86c.ADD, x86c.SUB, x86c.NEG, x86c.XOR}:
                 dst = GetX86InstrOperandList(instr)[-1]
                 dst_name = GetNodeVar(dst)
                 for v_name in la_i:
@@ -720,6 +719,16 @@ def _BuildInterferenceGraph(x86_ast):
                     for cs_reg in x86c.CallerSaveRegs():
                         cs_reg = MakeX86RegNode(cs_reg)
                         ig.AddSaturation(v_name, cs_reg)
+
+
+def _BuildInterferenceGraph(x86_ast):
+    ig = _InferenceGraph()
+    for var in GetNodeVarList(x86_ast):
+        ig.AddVar(var)
+
+    instr_list = GetX86ProgramInstrList(x86_ast)
+    live_afters = _UncoverLive(instr_list)
+    _ExtendInferenceGraphByInstrList(ig, instr_list, live_afters)
     return ig
 
 
@@ -841,6 +850,32 @@ def _ReplaceX86SiRets(x86_ast):
     return x86_ast
 
 
+def _AssignAllocatedLocByInstrList(instr_list, var_assigned_loc_map):
+    for i, instr in enumerate(instr_list):
+        if IsX86CallCNode(instr):
+            continue
+        elif IsX86TmpIfNode(instr):
+            then_instr_list = GetX86TmpIfThen(instr)
+            then_instr_list = _AssignAllocatedLocByInstrList(
+                then_instr_list, var_assigned_loc_map)
+            SetX86TmpIfThen(instr, then_instr_list)
+            else_instr_list = GetX86TmpIfElse(instr)
+            else_instr_list = _AssignAllocatedLocByInstrList(
+                else_instr_list, var_assigned_loc_map)
+            SetX86TmpIfElse(instr, else_instr_list)
+        else:
+            operand_list = GetX86InstrOperandList(instr)
+            for j, operand in enumerate(operand_list):
+                if TypeOf(operand) == VAR_NODE_T:
+                    # replace Var with Reg/Deref
+                    var_name = GetNodeVar(operand)
+                    loc = var_assigned_loc_map[var_name]
+                    operand_list[j] = loc
+            SetX86InstrOperandList(instr, operand_list)
+            instr_list[i] = instr
+    return instr_list
+
+
 def _RemoveSameMov(instr_list):
     def AreSrcDstSame(src, dst):
         stype, dtype = TypeOf(src), TypeOf(dst)
@@ -858,10 +893,15 @@ def _RemoveSameMov(instr_list):
 
     new_instr_list = []
     for i, instr in enumerate(instr_list):
-        if IsX86InstrNode(instr) and GetX86Instr(instr) == x86c.MOVE:
+        if IsX86InstrNode(instr) and GetX86Instr(instr) in {x86c.MOVE, x86c.MOVEZB}:
             src, dst = GetX86InstrOperandList(instr)
             if AreSrcDstSame(src, dst):
                 continue
+        elif IsX86TmpIfNode(instr):
+            then_instr_list = _RemoveSameMov(GetX86TmpIfThen(instr))
+            SetX86TmpIfThen(instr, then_instr_list)
+            else_instr_list = _RemoveSameMov(GetX86TmpIfElse(instr))
+            SetX86TmpIfElse(instr, else_instr_list)
         new_instr_list.append(instr)
     return new_instr_list
 
@@ -874,21 +914,24 @@ def AllocateRegisterOrStack(x86_ast, use_mr=True, rm_same_mov=True):
     # mrg = None
     x86_ast = _ReplaceX86SiRets(x86_ast)
 
-    var_assigned_loc, stack_sz = _AllocateRegisterOrStack(ig, mrg, use_mr)
-    assert len(var_assigned_loc) == len(GetNodeVarList(x86_ast))
+    var_assigned_loc_map, stack_sz = _AllocateRegisterOrStack(ig, mrg, use_mr)
+    assert len(var_assigned_loc_map) == len(GetNodeVarList(x86_ast))
+
     instr_list = GetX86ProgramInstrList(x86_ast)
-    for i, instr in enumerate(instr_list):
-        if IsX86CallCNode(instr):
-            continue
-        operand_list = GetX86InstrOperandList(instr)
-        for j, operand in enumerate(operand_list):
-            if TypeOf(operand) == VAR_NODE_T:
-                # replace Var with Reg/Deref
-                var_name = GetNodeVar(operand)
-                loc = var_assigned_loc[var_name]
-                operand_list[j] = loc
-        SetX86InstrOperandList(instr, operand_list)
-        instr_list[i] = instr
+    instr_list = _AssignAllocatedLocByInstrList(
+        instr_list, var_assigned_loc_map)
+    # for i, instr in enumerate(instr_list):
+    #     if IsX86CallCNode(instr):
+    #         continue
+    #     operand_list = GetX86InstrOperandList(instr)
+    #     for j, operand in enumerate(operand_list):
+    #         if TypeOf(operand) == VAR_NODE_T:
+    #             # replace Var with Reg/Deref
+    #             var_name = GetNodeVar(operand)
+    #             loc = var_assigned_loc[var_name]
+    #             operand_list[j] = loc
+    #     SetX86InstrOperandList(instr, operand_list)
+    #     instr_list[i] = instr
 
     if rm_same_mov:
         instr_list = _RemoveSameMov(instr_list)
