@@ -920,18 +920,6 @@ def AllocateRegisterOrStack(x86_ast, use_mr=True, rm_same_mov=True):
     instr_list = GetX86ProgramInstrList(x86_ast)
     instr_list = _AssignAllocatedLocByInstrList(
         instr_list, var_assigned_loc_map)
-    # for i, instr in enumerate(instr_list):
-    #     if IsX86CallCNode(instr):
-    #         continue
-    #     operand_list = GetX86InstrOperandList(instr)
-    #     for j, operand in enumerate(operand_list):
-    #         if TypeOf(operand) == VAR_NODE_T:
-    #             # replace Var with Reg/Deref
-    #             var_name = GetNodeVar(operand)
-    #             loc = var_assigned_loc[var_name]
-    #             operand_list[j] = loc
-    #     SetX86InstrOperandList(instr, operand_list)
-    #     instr_list[i] = instr
 
     if rm_same_mov:
         instr_list = _RemoveSameMov(instr_list)
@@ -939,6 +927,69 @@ def AllocateRegisterOrStack(x86_ast, use_mr=True, rm_same_mov=True):
     SetX86ProgramInstrList(x86_ast, instr_list)
     # the stack size is computed at this time
     SetX86ProgramStackSize(x86_ast, stack_sz)
+    return x86_ast
+
+
+'''Lower X86TmpIf pass
+'''
+
+
+def _LowerTmpIfByInstrList(instr_list, if_label_allocator):
+    new_instr_list = []
+    for instr in instr_list:
+        if IsX86TmpIfNode(instr):
+            # t_label, f_label, sink_label = self._builder.GetIfLabelPair()
+            # self.VisitCmp(GetIfCond(node))
+            # self._builder.AddInstr(MakeX86InstrNode(
+            #     EncodeCcIntoInstr(x86c.JMP_IF, x86c.CC_EQ), MakeX86LabelRefNode(t_label)))
+            # self._builder.AddLabelDef(MakeX86LabelDefNode(f_label))
+            # self._VisitStmtList(GetIfElse(node))
+            # self._builder.AddInstr(MakeX86InstrNode(
+            #     x86c.JMP, MakeX86LabelRefNode(sink_label)))
+            # self._builder.AddLabelDef(MakeX86LabelDefNode(t_label))
+            # self._VisitStmtList(GetIfThen(node))
+            # self._builder.AddLabelDef(MakeX86LabelDefNode(sink_label))
+            t_label, f_label, sink_label = if_label_allocator.Allocate()
+            new_instr_list.append(MakeX86InstrNode(EncodeCcIntoInstr(
+                x86c.JMP_IF, x86c.CC_EQ), MakeX86LabelRefNode(t_label)))
+
+            new_instr_list.append(MakeX86LabelDefNode(f_label))
+            else_instr_list = _LowerTmpIfByInstrList(
+                GetX86TmpIfElse(instr), if_label_allocator)
+            new_instr_list += else_instr_list
+            new_instr_list.append(MakeX86InstrNode(
+                x86c.JMP, MakeX86LabelRefNode(sink_label)))
+
+            new_instr_list.append(MakeX86LabelDefNode(t_label))
+            then_instr_list = _LowerTmpIfByInstrList(
+                GetX86TmpIfThen(instr), if_label_allocator)
+            new_instr_list += then_instr_list
+            new_instr_list.append(MakeX86LabelDefNode(sink_label))
+        else:
+            new_instr_list.append(instr)
+    return new_instr_list
+
+
+class _IfLabelAllocator(object):
+
+    def __init__(self):
+        self._next_label = 0
+
+    def Allocate(self):
+        idx = self._next_label
+        self._next_label += 1
+        t = 'label_{}_true'.format(idx)
+        f = 'label_{}_false'.format(idx)
+        s = 'label_{}_sink'.format(idx)
+        return t, f, s
+
+
+def LowerTmpIf(x86_ast):
+    assert IsX86ProgramNode(x86_ast)
+    if_label_allocator = _IfLabelAllocator()
+    instr_list = GetX86ProgramInstrList(x86_ast)
+    instr_list = _LowerTmpIfByInstrList(instr_list, if_label_allocator)
+    SetX86ProgramInstrList(x86_ast, instr_list)
     return x86_ast
 
 
@@ -1025,6 +1076,7 @@ def Compile(sch_ast):
     x86_ast = SelectInstruction(ir_ast)
     x86_ast = UncoverLive(x86_ast)
     x86_ast = AllocateRegisterOrStack(x86_ast)
+    x86_ast = LowerTmpIf(x86_ast)
     x86_ast = PatchInstruction(x86_ast)
     x86_ast = GenerateX86(x86_ast)
 
