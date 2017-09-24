@@ -70,7 +70,7 @@ if __name__ == '__main__':
     x86_ast = LowerTmpIf(x86_ast)
     PrintSourceCode('X86 (Lower TmpIf)',
                     X86SourceCode(x86_ast, x86_formatter))
-    '''
+
     x86_ast = PatchInstruction(x86_ast)
     PrintSourceCode('X86 (Patch Instructions)',
                     X86SourceCode(x86_ast, x86_formatter))
@@ -78,6 +78,7 @@ if __name__ == '__main__':
     x86_src_code = GenerateX86(x86_ast)
     PrintSourceCode('X86 (Assembly)', x86_src_code)
 
+    '''
     if input_filename is not None:
         import os
         output_filepath = os.path.dirname(input_filename)

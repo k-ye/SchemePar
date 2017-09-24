@@ -456,6 +456,15 @@ class X86AstVisitorBase(object):
         return node
 
 
+# TODO: move this to x86_const.py
+def MergeInstrWithCc(instr, cc):
+    if instr == 'jmp_if':
+        return 'j' + cc
+    elif instr == 'set':
+        return instr + cc
+    raise ValueError('instr={} cannot have a condition code'.format(instr))
+
+
 class _X86SourceCodeVisitor(X86AstVisitorBase):
 
     def __init__(self, formatter):
@@ -503,7 +512,7 @@ class _X86SourceCodeVisitor(X86AstVisitorBase):
         self._VisitArg(node, GetX86Label(node))
 
     def VisitLabelDef(self, node):
-        self._builder.Append('label {}:'.format(GetX86Label(node)))
+        self._formatter.AddLabelDef(GetX86Label(node), self._builder)
 
     def VisitCallC(self, node):
         logue = GetX86CallCLogue(node)
@@ -556,6 +565,9 @@ class X86InternalFormatter(object):
         else:
             builder.Append('( {} {} )'.format(t, var))
 
+    def AddLabelDef(self, label, builder):
+        builder.Append('label {}:'.format(label))
+
     def AddInstr(self, instr, operand_list, builder, src_code_gen):
         GenApplySourceCode(instr, operand_list, builder, src_code_gen)
 
@@ -574,13 +586,6 @@ class X86InternalFormatter(object):
         instr_list = GetX86ProgramInstrList(node)
         live_afters = GetX86ProgramLiveAfters(node)
         self.FormatInstrList(instr_list, live_afters, builder, src_code_gen)
-        # for i, instr in enumerate(instr_list):
-        #     builder.NewLine()
-        #     src_code_gen(instr, builder)
-        #     if self.include_live_afters and i < len_live_afters:
-        #         la = live_afters[i]
-        #         la_str = ', '.join(la)
-        #         builder.Append('( { %s } )' % la_str)
 
     def FormatInstrList(self, instr_list, live_afters, builder, src_code_gen):
         len_live_afters = 0
@@ -606,7 +611,16 @@ class MacX86Formatter(object):
         return '%' + reg
 
     def _LabelRef(self, label):
+        # TODO: make this shared between x86_ast.py and compiler.py
+        INTERNAL_LABEL_HEADER = '@@'
+        if label.startswith(INTERNAL_LABEL_HEADER):
+            return label[len(INTERNAL_LABEL_HEADER):]
         return '_' + label
+
+    def _Reg64BitToLow8Bit(self, reg):
+        # https://docs.microsoft.com/en-us/windows-hardware/drivers/debugger/x64-architecture
+        reg_map = {'rax': 'al', }
+        return reg_map[reg]
 
     def AddArg(self, t, var, builder):
         argstr = None
@@ -617,16 +631,32 @@ class MacX86Formatter(object):
             argstr = '${}'.format(var)
         elif t == X86_REG_NODE_T:
             argstr = self._Reg(var)
+        elif t == X86_BYTE_REG_NODE_T:
+            argstr = self._Reg(self._Reg64BitToLow8Bit(var))
         elif t == X86_LABEL_REF_NODE_T:
             argstr = self._LabelRef(var)
         else:
             raise RuntimeError('type={} var={}'.format(t, var))
         builder.Append(argstr, append_whitespace=False)
 
+    def AddLabelDef(self, label, builder):
+        builder.ClearIndent()
+        builder.Append('{}:'.format(self._LabelRef(label)))
+
     def _Instr(self, instr):
-        return instr + 'q'
+        instrs_64bit = {'add', 'sub', 'neg', 'xor', 'cmp',
+                        'mov', 'movzb', 'call', 'push', 'pop', 'ret', }
+
+        if instr in instrs_64bit:
+            return instr + 'q'
+        return instr
 
     def _AddInstrDefault(self, instr, operand_list, builder, src_code_gen):
+        try:
+            instr, cc = DecodeCcFromInstr(instr)
+            instr = MergeInstrWithCc(instr, cc)
+        except ValueError:
+            pass
         instr = '{0: <6}'.format(self._Instr(instr))
         builder.Append(instr)
         last_index = len(operand_list) - 1
@@ -643,14 +673,14 @@ class MacX86Formatter(object):
                 '.section    __TEXT,__text,regular,pure_instructions',
                 '.macosx_version_min 10, 12',
                 '',
-                '.globl  _main',
+                '.globl  {}'.format(self._LabelRef('main')),
                 '.p2align    4, 0x90',
             ]
             for line in lines:
                 builder.NewLine()
                 builder.Append(line)
         builder.NewLine()
-        builder.Append('_main:')
+        self.AddLabelDef('main', builder)
 
         # instructions
         program_fmt = DefaultProgramFormatter(stmt_hdr='instructions')

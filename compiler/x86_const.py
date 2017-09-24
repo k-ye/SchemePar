@@ -60,3 +60,26 @@ def FreeRegs():
     # rax is excluded due to how Patch Instruction is implemented
     for r in [RDX, RCX, RSI, RDI, R8, R9, R10, R11]:
         yield r
+
+
+def Reg64BitToLow8Bit(reg):
+    # https://docs.microsoft.com/en-us/windows-hardware/drivers/debugger/x64-architecture
+    reg_map = {
+        RAX: 'al',
+        RBX: 'bl',
+        RCX: 'cl',
+        RDX: 'dl',
+        RSI: 'sil',
+        RDI: 'dil',
+        RBP: 'bpl',
+        RSP: 'spl',
+        R8: 'r8b',
+        R9: 'r9b',
+        R10: 'r10b',
+        R11: 'r11b',
+        R12: 'r12b',
+        R13: 'r13b',
+        R14: 'r14b',
+        R15: 'r15b',
+    }
+    return reg_map[reg]

@@ -919,17 +919,6 @@ def _LowerTmpIfByInstrList(instr_list, if_label_allocator):
     new_instr_list = []
     for instr in instr_list:
         if IsX86TmpIfNode(instr):
-            # t_label, f_label, sink_label = self._builder.GetIfLabelPair()
-            # self.VisitCmp(GetIfCond(node))
-            # self._builder.AddInstr(MakeX86InstrNode(
-            #     EncodeCcIntoInstr(x86c.JMP_IF, x86c.CC_EQ), MakeX86LabelRefNode(t_label)))
-            # self._builder.AddLabelDef(MakeX86LabelDefNode(f_label))
-            # self._VisitStmtList(GetIfElse(node))
-            # self._builder.AddInstr(MakeX86InstrNode(
-            #     x86c.JMP, MakeX86LabelRefNode(sink_label)))
-            # self._builder.AddLabelDef(MakeX86LabelDefNode(t_label))
-            # self._VisitStmtList(GetIfThen(node))
-            # self._builder.AddLabelDef(MakeX86LabelDefNode(sink_label))
             t_label, f_label, sink_label = if_label_allocator.Allocate()
             new_instr_list.append(MakeX86InstrNode(EncodeCcIntoInstr(
                 x86c.JMP_IF, x86c.CC_EQ), MakeX86LabelRefNode(t_label)))
@@ -950,6 +939,8 @@ def _LowerTmpIfByInstrList(instr_list, if_label_allocator):
             new_instr_list.append(instr)
     return new_instr_list
 
+_INTERNAL_LABEL_HEADER = '@@'
+
 
 class _IfLabelAllocator(object):
 
@@ -959,9 +950,9 @@ class _IfLabelAllocator(object):
     def Allocate(self):
         idx = self._next_label
         self._next_label += 1
-        t = 'label_{}_true'.format(idx)
-        f = 'label_{}_false'.format(idx)
-        s = 'label_{}_sink'.format(idx)
+        t = '{}IF_T_{}'.format(_INTERNAL_LABEL_HEADER, idx)
+        f = '{}IF_F_{}'.format(_INTERNAL_LABEL_HEADER, idx)
+        s = '{}IF_S_{}'.format(_INTERNAL_LABEL_HEADER, idx)
         return t, f, s
 
 
@@ -1018,20 +1009,30 @@ def PatchInstruction(x86_ast):
                 instr = MakeX86InstrNode(x86c.RET)
                 new_instr_list.append(instr)
                 has_appended = True
-        elif GetX86InstrArity(instr) == 2:
+        elif IsX86InstrNode(instr) and GetX86InstrArity(instr) == 2:
+            method = GetX86Instr(instr)
             op1, op2 = GetX86InstrOperandList(instr)
+            if method == x86c.CMP and IsX86IntNode(op2):
+                tmp_ref = MakeX86RegNode(x86c.RAX)
+                new_instr = MakeX86InstrNode(x86c.MOVE, op2, tmp_ref)
+                new_instr_list.append(new_instr)
+                new_instr = MakeX86InstrNode(x86c.CMP, op1, tmp_ref)
+                new_instr_list.append(new_instr)
+                has_appended = True
+                instr = new_instr  # this is only needed for the check below
             if TypeOf(op1) == X86_DEREF_NODE_T and \
                     TypeOf(op2) == X86_DEREF_NODE_T:
                 tmp_ref = MakeX86RegNode(x86c.RAX)
                 new_instr = MakeX86InstrNode(x86c.MOVE, op1, tmp_ref)
                 new_instr_list.append(new_instr)
-                new_instr = MakeX86InstrNode(GetX86Instr(instr), tmp_ref, op2)
+                new_instr = MakeX86InstrNode(method, tmp_ref, op2)
                 new_instr_list.append(new_instr)
                 has_appended = True
                 instr = new_instr  # this is only needed for the check below
             dst_type = TypeOf(GetX86InstrOperandList(instr)[1])
-            assert dst_type in {X86_REG_NODE_T, X86_DEREF_NODE_T}, \
-                'dst type={} for instr={}'.format(dst_type, GetX86Instr(instr))
+            assert dst_type in {X86_REG_NODE_T, X86_DEREF_NODE_T,
+                                X86_BYTE_REG_NODE_T}, \
+                'dst type={} for instr={}'.format(dst_type, method)
         if not has_appended:
             new_instr_list.append(instr)
     SetX86ProgramInstrList(x86_ast, new_instr_list)

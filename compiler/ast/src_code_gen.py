@@ -48,6 +48,10 @@ class AstSourceCodeBuilder(object):
     def _MakeIndent(self):
         return ''.join([' '] * self._indent_lv)
 
+    def ClearIndent(self):
+        assert self._lines[-1] == self._MakeIndent()
+        self._lines[-1] = ''
+
 
 class DefaultProgramFormatter(object):
 
