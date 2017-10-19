@@ -78,7 +78,6 @@ if __name__ == '__main__':
     x86_src_code = GenerateX86(x86_ast)
     PrintSourceCode('X86 (Assembly)', x86_src_code)
 
-    '''
     if input_filename is not None:
         import os
         output_filepath = os.path.dirname(input_filename)
@@ -88,4 +87,3 @@ if __name__ == '__main__':
         with open(output_filename, 'w') as wf:
             wf.write(x86_src_code)
             wf.write('\n')
-    '''

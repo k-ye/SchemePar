@@ -13,8 +13,10 @@ OKGREEN = '\033[92m'
 FAIL = '\033[91m'
 ENDC = '\033[0m'
 
+
 def DropExt(filepath):
     return ChangeExt(filepath, None)
+
 
 def ChangeExt(filepath, ext):
     path = os.path.splitext(filepath)[0]
@@ -92,7 +94,7 @@ def RunTests():
         shu.rmtree(tmp_test_dir)
     os.makedirs(tmp_test_dir)
 
-    test_prefix = 'r1'
+    test_prefix = 'r2'
     for name in os.listdir(test_dir):
         test_path = os.path.join(test_dir, name)
         if os.path.isfile(test_path) and name.startswith(test_prefix) and name.endswith('.rkt'):

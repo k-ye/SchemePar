@@ -534,13 +534,13 @@ class _X86SourceCodeVisitor(X86AstVisitorBase):
             builder.Append('# then')
             then_instr_list = GetX86TmpIfThen(node)
             self._formatter.FormatInstrList(
-                then_instr_list, None, builder, self._FakeVisit)
+                then_instr_list, GetX86TmpIfThenLiveAfter(node), builder, self._FakeVisit)
 
             builder.NewLine()
             builder.Append('# else')
             else_instr_list = GetX86TmpIfElse(node)
             self._formatter.FormatInstrList(
-                else_instr_list, None, builder, self._FakeVisit)
+                else_instr_list, GetX86TmpIfElseLiveAfter(node), builder, self._FakeVisit)
         builder.NewLine()
         builder.Append(')')
 

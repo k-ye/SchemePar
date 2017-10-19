@@ -492,8 +492,8 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
         instr_list = self.VisitCmp(GetIfCond(node))
         # the fact that we don't include jump instruction here doesn't make
         # a difference to the live analysis
-        then_instr_list = self._VisitStmtList(GetIfElse(node))
-        else_instr_list = self._VisitStmtList(GetIfThen(node))
+        then_instr_list = self._VisitStmtList(GetIfThen(node))
+        else_instr_list = self._VisitStmtList(GetIfElse(node))
         x86_tmp_if = MakeX86TmpIfNode(then_instr_list, else_instr_list)
         instr_list.append(x86_tmp_if)
         return instr_list
@@ -595,11 +595,13 @@ def _WrittenVariableSet(node):
     return result
 
 
-def _UncoverLive(instr_list, last_live_after=None):
+def _UncoverLive(instr_list, last_live_after=None, find_for_first=False):
     num_instr = len(instr_list)
+    begin_index = 0 if find_for_first else 1
     live_afters = [set() for _ in xrange(num_instr)]
     live_afters[-1] = last_live_after or set()
-    for i in reversed(xrange(1, num_instr)):
+    first_instr_lb = None
+    for i in reversed(xrange(begin_index, num_instr)):
         instr = instr_list[i]
         # L_a(i)
         la_i = live_afters[i]
@@ -607,22 +609,28 @@ def _UncoverLive(instr_list, last_live_after=None):
         lb_i = None
         if IsX86TmpIfNode(instr):
             then_instr_list = GetX86TmpIfThen(instr)
-            then_la_list = _UncoverLive(then_instr_list, la_i)
+            then_la_list, then_first_lb = _UncoverLive(
+                then_instr_list, la_i, True)
             else_instr_list = GetX86TmpIfElse(instr)
-            else_la_list = _UncoverLive(else_instr_list, la_i)
+            else_la_list, else_first_lb = _UncoverLive(
+                else_instr_list, la_i, True)
             SetX86TmpIfThenLiveAfter(instr, then_la_list)
             SetX86TmpIfElseLiveAfter(instr, else_la_list)
-            lb_i = then_la_list[0] | else_la_list[0]
+            lb_i = then_first_lb | else_first_lb | la_i
         else:
             lb_i = (la_i - _WrittenVariableSet(instr)) | _ReadVariableSet(instr)
-        live_afters[i - 1] = lb_i
-    return live_afters
+        if i == 0:
+            assert find_for_first
+            first_instr_lb = lb_i
+        else:
+            live_afters[i - 1] = lb_i
+    return live_afters, first_instr_lb
 
 
 def UncoverLive(x86_ast):
     assert IsX86ProgramNode(x86_ast)
     instr_list = GetX86ProgramInstrList(x86_ast)
-    live_afters = _UncoverLive(instr_list)
+    live_afters, _ = _UncoverLive(instr_list)
     SetX86ProgramLiveAfters(x86_ast, live_afters)
     return x86_ast
 
@@ -708,7 +716,7 @@ def _BuildInterferenceGraph(x86_ast):
         ig.AddVar(var)
 
     instr_list = GetX86ProgramInstrList(x86_ast)
-    live_afters = _UncoverLive(instr_list)
+    live_afters, _ = _UncoverLive(instr_list)
     _ExtendInferenceGraphByInstrList(ig, instr_list, live_afters)
     return ig
 
@@ -897,6 +905,10 @@ def AllocateRegisterOrStack(x86_ast, use_mr=True, rm_same_mov=True):
 
     var_assigned_loc_map, stack_sz = _AllocateRegisterOrStack(ig, mrg, use_mr)
     assert len(var_assigned_loc_map) == len(GetNodeVarList(x86_ast))
+    # for var in GetNodeVarList(x86_ast):
+    #     var_name = GetNodeVar(var)
+    #     print('{} assinged to {}'.format(
+    #         var_name, var_assigned_loc_map[var_name]))
 
     instr_list = GetX86ProgramInstrList(x86_ast)
     instr_list = _AssignAllocatedLocByInstrList(
