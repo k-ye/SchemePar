@@ -39,6 +39,28 @@ const int64_t TUPLE_LEN_MASK = 0x7e;
 const int64_t TUPLE_IS_COPIED_MASK = 0x01;
 const int64_t TUPLE_FWD_ADDR_MASK = 0xfffffff8;
 
+// A Tuple is a chunk of continuous memory where each element is 8-byte long.
+// To make tuple GC-able, an additional 8-byte tag is prepended to this memory.
+// Therefore, a tuple of size N consumes (N + 1) * 8 bytes. The length of a 
+// tuple is limited to 50.
+//
+// The tag is divided into three segments:
+// |          63 .. 7          |      6 .. 1      |     0      |
+//  \_____ pointer masks _____/ \____ length ____/ \_ copied _/
+//
+// 
+// Bit 63 .. 7: Bit (7 + k) corresponds to the k-th element in the tuple, where
+//      0 <= k < 50 (the max tuple length is 50). Each bit indicates whether
+//      the element is a tuple pointer (1) or a basic int/bool (0). During GC,
+//      we can ignore the int/bools after copying the tuple, but need to
+//      recursively handle the tuple pointers.
+// Bit 6 .. 1: Stores the length of the tuple.
+// Bit 0: Indicates whether this tuple is already copied to ToSpace. If it has
+//      not yet, this bit is 1, otherwise it is 0. In the latter case, the
+//      entire tag in the *FromSpace* is actually a pointer that points to the
+//      copied tuple in ToSpace. (The tag of this copied tuple in ToSpace is
+//      still a tag.)
+
 static int64_t get_tuple_pointer_mask(int64_t tag) {
   return ((tag & TUPLE_POINTER_MASK) >> 7);
 }
