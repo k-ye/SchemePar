@@ -1,6 +1,7 @@
 #include "gc.h"
 
 #include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -14,41 +15,47 @@ static int64_t* tospace_end = NULL;
 
 ///////////////////////////////////////////////////////////////
 
-static uint64_t ROUNDUP_DW(uint64_t sz) { return (((sz + 7) / 8) * 8); }
+static uint64_t ROUNDUP_DW(uint64_t sz) { return ((sz + 7) & (~0x07)); }
+
+static char* alloc_8bytes_aligned(uint64_t* size) {
+  *size = ROUNDUP_DW(*size);
+  char* ptr = (char*)malloc(*size + 8);
+  ptr = (char*)ROUNDUP_DW((uintptr_t)ptr);
+  return ptr;
+}
 
 void initialize(uint64_t rootstack_size, uint64_t heap_size) {
-  rootstack_size = ROUNDUP_DW(rootstack_size);
-  heap_size = ROUNDUP_DW(heap_size);
-
-  rootstack_begin = (int64_t**)malloc(rootstack_size);
+  rootstack_begin = (int64_t**)alloc_8bytes_aligned(&rootstack_size);
   memset((void*)rootstack_begin, 0, rootstack_size);
 
-  fromspace_begin = (int64_t*)malloc(heap_size);
-  fromspace_end = (int64_t*)(((char*)fromspace_begin) + heap_size);
+  fromspace_begin = (int64_t*)alloc_8bytes_aligned(&heap_size);
+  fromspace_end = (int64_t*)((uintptr_t)(fromspace_begin) + heap_size);
   memset((void*)fromspace_begin, 0, heap_size);
 
-  tospace_begin = (int64_t*)malloc(heap_size);
-  tospace_end = (int64_t*)(((char*)tospace_end) + heap_size);
+  tospace_begin = (int64_t*)alloc_8bytes_aligned(&heap_size);
+  tospace_end = (int64_t*)((uintptr_t)(tospace_begin) + heap_size);
   memset((void*)tospace_begin, 0, heap_size);
+
+  free_ptr = fromspace_begin;
 }
 
 ///////////////////////////////////////////////////////////////
 
-const int64_t TUPLE_POINTER_MASK = 0xffffff80;
-const int64_t TUPLE_LEN_MASK = 0x7e;
-const int64_t TUPLE_IS_COPIED_MASK = 0x01;
-const int64_t TUPLE_FWD_ADDR_MASK = 0xfffffff8;
+const int64_t TUPLE_POINTER_MASK = 0xffffffffffffff80;
+const int64_t TUPLE_LEN_MASK = 0x7eu;
+const int64_t TUPLE_IS_COPIED_MASK = 0x01u;
+const int64_t TUPLE_FWD_ADDR_MASK = 0xfffffffffffffff8;
 
 // A Tuple is a chunk of continuous memory where each element is 8-byte long.
 // To make tuple GC-able, an additional 8-byte tag is prepended to this memory.
-// Therefore, a tuple of size N consumes (N + 1) * 8 bytes. The length of a 
+// Therefore, a tuple of size N consumes (N + 1) * 8 bytes. The length of a
 // tuple is limited to 50.
 //
 // The tag is divided into three segments:
 // |          63 .. 7          |      6 .. 1      |     0      |
 //  \_____ pointer masks _____/ \____ length ____/ \_ copied _/
 //
-// 
+//
 // Bit 63 .. 7: Bit (7 + k) corresponds to the k-th element in the tuple, where
 //      0 <= k < 50 (the max tuple length is 50). Each bit indicates whether
 //      the element is a tuple pointer (1) or a basic int/bool (0). During GC,
@@ -75,6 +82,7 @@ static int tuple_is_copied(int64_t tag) {
 
 static void mark_tuple_as_copied(int64_t* old_addr, int64_t* new_addr) {
   int64_t new_addri = (int64_t)(new_addr);
+  // printf("new_addri=%llx\n", new_addri);
   assert((new_addri & (~TUPLE_FWD_ADDR_MASK)) == 0);
   *old_addr = new_addri;
 }
@@ -121,14 +129,14 @@ static int maybe_copy_tuple_to_tospace(int64_t** old_addr_ptr,
     new_addr = *next_free_ptr;
 
     unsigned len = get_tuple_length(tag);
-    unsigned dwords_needed = len + 1;  // #elements + tag
-    unsigned bytes_needed = (dwords_needed << 3);
+    unsigned dwords_sz = len + 1;  // #elements + tag
+    unsigned bytes_sz = (dwords_sz << 3);
     // Copy all the data from FromSpace to ToSpace
-    memmove((void*)new_addr, (const void*)old_addr, bytes_needed);
+    memmove((void*)new_addr, (const void*)old_addr, bytes_sz);
 
     // Update the free pointer
-    *next_free_ptr += dwords_needed;
-    assert(((uint64_t)(*next_free_ptr) - (uint64_t)(new_addr)) == bytes_needed);
+    *next_free_ptr += dwords_sz;
+    assert(((uintptr_t)(*next_free_ptr) - (uintptr_t)(new_addr)) == bytes_sz);
 
     // Update the tag of the tuple in the *FromSpace*, so that it stores a
     // forward pointer. This must happen *after* the original content is copied
@@ -172,6 +180,8 @@ void collect(int64_t** rootstack_ptr, uint64_t bytes_needed) {
   }
 
   free_ptr = queue_tail;
+  memset((void*)fromspace_begin, 0,
+         ((uintptr_t)(fromspace_end) - (uintptr_t)(fromspace_begin)));
   swap_ptr(&fromspace_begin, &tospace_begin);
   swap_ptr(&fromspace_end, &tospace_end);
 }
