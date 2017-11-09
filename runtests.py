@@ -94,25 +94,25 @@ def RunTests():
         shu.rmtree(tmp_test_dir)
     os.makedirs(tmp_test_dir)
 
-    test_prefix = 'r2'
-    for name in os.listdir(test_dir):
-        test_path = os.path.join(test_dir, name)
-        if os.path.isfile(test_path) and name.startswith(test_prefix) and name.endswith('.rkt'):
-            shu.copy(test_path, tmp_test_dir)
-            tmp_test_path = os.path.join(tmp_test_dir, name)
+    for test_prefix in ['r1', 'r2']:
+        for name in os.listdir(test_dir):
+            test_path = os.path.join(test_dir, name)
+            if os.path.isfile(test_path) and name.startswith(test_prefix) and name.endswith('.rkt'):
+                shu.copy(test_path, tmp_test_dir)
+                tmp_test_path = os.path.join(tmp_test_dir, name)
 
-            input_path = ChangeExt(test_path, 'in')
-            tmp_input_path = None
-            if os.path.isfile(input_path):
-                shu.copy(input_path, tmp_test_dir)
-                tmp_input_path = ChangeExt(tmp_test_path, 'in')
-            else:
-                input_path = None
+                input_path = ChangeExt(test_path, 'in')
+                tmp_input_path = None
+                if os.path.isfile(input_path):
+                    shu.copy(input_path, tmp_test_dir)
+                    tmp_input_path = ChangeExt(tmp_test_path, 'in')
+                else:
+                    input_path = None
 
-            result = RunTestCase(tmp_test_path, tmp_input_path)
-            if not result:
-                break
-            # break
+                result = RunTestCase(tmp_test_path, tmp_input_path)
+                if not result:
+                    break
+                # break
     shu.rmtree(tmp_test_dir)
 
 if __name__ == '__main__':
