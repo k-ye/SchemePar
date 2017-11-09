@@ -72,6 +72,10 @@ def SchemeParser():
         if len(p) > 2:
             p[0] = [p[1]] + p[2]  # non-empty case
 
+    def p_expr_list(p):
+        'expr_list : expr maybe_expr_list'
+        p[0] = [p[1]] + p[2]
+
     def p_expr_if(p):
         'expr : LPAREN if_inner RPAREN'
         p[0] = p[2]
@@ -80,6 +84,19 @@ def SchemeParser():
         'if_inner : IF expr expr expr'
         cond, then, els = p[2], p[3], p[4]
         p[0] = MakeSchIfNode(cond, then, els)
+
+    def p_expr_vector_init(p):
+        'expr : LPAREN VECTOR_INIT expr_list RPAREN'
+        p[0] = MakeSchVectorInitNode(p[3])
+
+    def p_expr_vector_ref(p):
+        'expr : LPAREN VECTOR_REF expr expr RPAREN'
+        p[0] = MakeSchVectorRefNode(p[3], p[4])
+
+    def p_expr_vector_set(p):
+        'expr : LPAREN VECTOR_SET expr expr expr RPAREN'
+        vec, idx, val = p[3], p[4], p[5]
+        p[0] = MakeSchVectorSetNode(vec, idx, val)
 
     def p_empty(p):
         'empty :'
@@ -103,8 +120,8 @@ def SchemeParser():
 if __name__ == '__main__':
     test_data = '''
     ; a test Scheme program using R2 grammar
-    (let ([foo 43] [bar (- 1)])
-        (if #t (+ foo bar) (read))
+    (let ([foo 43] [bar (- 1)] [x (vector (vector foo) 42 #t)])
+        (if #t (+ foo bar) (vector-ref x 1))
     )
     '''
     test_data = lexer.LexPreprocess(test_data)
@@ -112,4 +129,5 @@ if __name__ == '__main__':
     lexer = lexer.SchemeLexer()
     parser = SchemeParser()
     ast = parser.parse(test_data, lexer=lexer)
+    # print(ast)
     print(SchSourceCode(ast))

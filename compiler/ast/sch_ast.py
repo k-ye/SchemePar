@@ -12,7 +12,6 @@ _SCH_APPLY_P_EXPR_LIST = 'expr_list'
 
 _NODE_TC = TypeChain(NODE_T, None)
 _EXPR_TC = TypeChain(EXPR_NODE_T, _NODE_TC)
-_CF_TC = TypeChain('control_flow', _NODE_TC)
 
 # # evaluate type that is inferenced.
 # _P_INFER_EVAL_TYPE = 'infer_eval_type'
@@ -25,24 +24,6 @@ def _MakeSchNode(type, parent_tc):
 def _MakeSchExprNode(type):
     return _MakeSchNode(type, _EXPR_TC)
 
-
-# def _IsNodeTypeInferred(node):
-#     # right now we only have runtime provided functions ('read') that
-#     # could produce an evaluation type of 'any'
-#     if not TypeOf(node) == APPLY_NODE_T:
-#         return False
-#     method = GetNodeMethod(node)
-#     return IsSchRtmFn(method)
-
-
-# def SetSchNodeInferredEvalType(node, type):
-#     assert LangOf(node) == SCH_LANG and _IsNodeTypeInferred(node)
-#     SetProperty(node, _P_INFER_EVAL_TYPE, type)
-
-
-# def GetSchNodeInferredEvalType(node):
-#     assert LangOf(node) == SCH_LANG and _IsNodeTypeInferred(node)
-#     return GetProperty(node, _P_INFER_EVAL_TYPE)
 
 def MakeSchIntNode(x):
     node = _MakeSchExprNode(INT_NODE_T)
@@ -137,7 +118,7 @@ def SetSchProgram(node, prg_body):
 
 
 def MakeSchIfNode(cond, then, els):
-    node = _MakeSchExprNode(IF_NODE_T)  # _MakeSchNode(IF_NODE_T, _CF_TC)
+    node = _MakeSchExprNode(IF_NODE_T)
     SetProperty(node, IF_P_COND, cond)
     SetProperty(node, IF_P_THEN, then)
     SetProperty(node, IF_P_ELSE, els)
@@ -146,6 +127,39 @@ def MakeSchIfNode(cond, then, els):
 
 def IsSchIfNode(node):
     return LangOf(node) == SCH_LANG and TypeOf(node) == IF_NODE_T
+
+
+def MakeSchVectorInitNode(arg_list):
+    node = _MakeSchExprNode(VECTOR_INIT_NODE_T)
+    SetProperty(node, P_ARG_LIST, arg_list)
+    return node
+
+
+def IsSchVectorInitNode(node):
+    return LangOf(node) == SCH_LANG and TypeOf(node) == VECTOR_INIT_NODE_T
+
+
+def MakeSchVectorRefNode(vec, idx):
+    node = _MakeSchExprNode(VECTOR_REF_NODE_T)
+    SetProperty(node, VECTOR_P_VEC, vec)
+    SetProperty(node, VECTOR_P_INDEX, idx)
+    return node
+
+
+def IsSchVectorRefNode(node):
+    return LangOf(node) == SCH_LANG and TypeOf(node) == VECTOR_REF_NODE_T
+
+
+def MakeSchVectorSetNode(vec, idx, val):
+    node = _MakeSchExprNode(VECTOR_SET_NODE_T)
+    SetProperty(node, VECTOR_P_VEC, vec)
+    SetProperty(node, VECTOR_P_INDEX, idx)
+    SetProperty(node, VECTOR_SET_P_VAL, val)
+    return node
+
+
+def IsSchVectorSetNode(node):
+    return LangOf(node) == SCH_LANG and TypeOf(node) == VECTOR_SET_NODE_T
 
 
 def SchRtmFns():
@@ -179,28 +193,24 @@ def IsSchCmpOp(op):
 class SchAstVisitorBase(object):
 
     def Visit(self, node):
-        '''
-        Do NOT override
+        '''Do NOT override
         '''
         self._BeginVisit()
         visit_result = self._Visit(node)
         return self._EndVisit(node, visit_result)
 
     def _BeginVisit(self):
-        '''
-        Optional to override
+        '''Optional to override
         '''
         pass
 
     def _EndVisit(self, node, visit_result):
-        '''
-        Optional to override
+        '''Optional to override
         '''
         return visit_result
 
     def _Visit(self, node):
-        '''
-        Do NOT override
+        '''Do NOT override
         '''
         assert LangOf(node) == SCH_LANG, LangOf(node)
         ndtype = TypeOf(node)
@@ -213,6 +223,12 @@ class SchAstVisitorBase(object):
             result = self.VisitLet(node)
         elif ndtype == IF_NODE_T:
             result = self.VisitIf(node)
+        elif ndtype == VECTOR_INIT_NODE_T:
+            result = self.VisitVectorInit(node)
+        elif ndtype == VECTOR_REF_NODE_T:
+            result = self.VisitVectorRef(node)
+        elif ndtype == VECTOR_SET_NODE_T:
+            result = self.VisitVectorSet(node)
         elif ndtype == INT_NODE_T:
             result = self.VisitInt(node)
         elif ndtype == VAR_NODE_T:
@@ -224,44 +240,52 @@ class SchAstVisitorBase(object):
         return result
 
     def VisitProgram(self, node):
-        '''
-        Override
+        '''Override
         '''
         return node
 
     def VisitApply(self, node):
-        '''
-        Override
+        '''Override
         '''
         return node
 
     def VisitLet(self, node):
-        '''
-        Override
+        '''Override
         '''
         return node
 
     def VisitIf(self, node):
+        '''Override
         '''
-        Override
+        return node
+
+    def VisitVectorInit(self, node):
+        '''Override
+        '''
+        return node
+
+    def VisitVectorRef(self, node):
+        '''Override
+        '''
+        return node
+
+    def VisitVectorSet(self, node):
+        '''Override
         '''
         return node
 
     def VisitInt(self, node):
-        '''
-        Override
+        '''Override
         '''
         return node
 
     def VisitVar(self, node):
-        '''
-        Override
+        '''Override
         '''
         return node
 
     def VisitBool(self, node):
-        '''
-        Override
+        '''Override
         '''
         return node
 
@@ -308,7 +332,10 @@ class _SchSourceCodeVisitor(SchAstVisitorBase):
                     builder.NewLine()
                     builder.Append('[')
                     self._Visit(var)
-                    self._Visit(var_init)
+                    with builder.Indent():
+                        builder.NewLine()
+                        self._Visit(var_init)
+                    builder.NewLine()
                     builder.Append(']')
             builder.NewLine()
             builder.Append(')')
@@ -339,6 +366,43 @@ class _SchSourceCodeVisitor(SchAstVisitorBase):
             builder.NewLine()
             self._Visit(GetIfElse(node))
 
+        builder.NewLine()
+        builder.Append(')')
+        return node
+
+    def VisitVectorInit(self, node):
+        builder = self._builder
+        builder.Append('( vector')
+        with builder.Indent():
+            for expr in GetNodeArgList(node):
+                builder.NewLine()
+                self._Visit(expr)
+        builder.NewLine()
+        builder.Append(')')
+        return node
+
+    def VisitVectorRef(self, node):
+        builder = self._builder
+        builder.Append('( vector-ref')
+        with builder.Indent():
+            builder.NewLine()
+            self._Visit(GetVectorNodeVec(node))
+            builder.NewLine()
+            self._Visit(GetVectorNodeIndex(node))
+        builder.NewLine()
+        builder.Append(')')
+        return node
+
+    def VisitVectorSet(self, node):
+        builder = self._builder
+        builder.Append('( vector-set!')
+        with builder.Indent():
+            builder.NewLine()
+            self._Visit(GetVectorNodeVec(node))
+            builder.NewLine()
+            self._Visit(GetVectorNodeIndex(node))
+            builder.NewLine()
+            self._Visit(GetVectorSetVal(node))
         builder.NewLine()
         builder.Append(')')
         return node

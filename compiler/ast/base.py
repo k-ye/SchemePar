@@ -108,7 +108,13 @@ ARG_NODE_T = 'arg'
 STMT_NODE_T = 'stmt'
 APPLY_NODE_T = 'apply'
 PROGRAM_NODE_T = 'program'
+VOID_NODE_T = 'void'
+
 IF_NODE_T = 'if'
+
+VECTOR_INIT_NODE_T = 'vector_init'
+VECTOR_REF_NODE_T = 'vector_ref'
+VECTOR_SET_NODE_T = 'vector_set'
 
 '''Common Node Property Names
 '''
@@ -119,9 +125,14 @@ P_METHOD = 'method'
 P_ARG_LIST = 'arg_list'
 P_VAR_LIST = 'var_list'
 P_STMT_LIST = 'stmt_list'
+
 IF_P_COND = 'cond'
 IF_P_THEN = 'then'
 IF_P_ELSE = 'else'
+
+VECTOR_P_VEC = 'vec'
+VECTOR_P_INDEX = 'idx'
+VECTOR_SET_P_VAL = 'val'
 
 ''' Common Node Operations
 '''
@@ -215,3 +226,33 @@ def GetIfElse(node):
 def SetIfElse(node, els):
     assert TypeOf(node) == IF_NODE_T
     SetProperty(node, IF_P_ELSE, els)
+
+
+def GetVectorNodeVec(node):
+    assert TypeOf(node) in {VECTOR_REF_NODE_T, VECTOR_SET_NODE_T}
+    return GetProperty(node, VECTOR_P_VEC)
+
+
+def SetVectorNodeVec(node, vec):
+    assert TypeOf(node) in {VECTOR_REF_NODE_T, VECTOR_SET_NODE_T}
+    SetProperty(node, VECTOR_P_VEC, vec)
+
+
+def GetVectorNodeIndex(node):
+    assert TypeOf(node) in {VECTOR_REF_NODE_T, VECTOR_SET_NODE_T}
+    return GetProperty(node, VECTOR_P_INDEX)
+
+
+def SetVectorNodeIndex(node, idx):
+    assert TypeOf(node) in {VECTOR_REF_NODE_T, VECTOR_SET_NODE_T}
+    SetProperty(node, VECTOR_P_INDEX, idx)
+
+
+def GetVectorSetVal(node):
+    assert TypeOf(node) == VECTOR_SET_NODE_T
+    return GetProperty(node, VECTOR_SET_P_VAL)
+
+
+def SetVectorSetVal(node, val):
+    assert TypeOf(node) == VECTOR_SET_NODE_T
+    SetProperty(node, VECTOR_SET_P_VAL, val)
