@@ -19,6 +19,9 @@ tokens = [
     'VAR',
     'ARITH_OP',
     'CMP_OP',
+    'VECTOR_INIT',
+    'VECTOR_REF',
+    'VECTOR_SET',
     'LPAREN',
     'RPAREN',
     'LBRACKET',
@@ -44,15 +47,19 @@ def LexPreprocess(source):
     # Important to have the following whitespace
     replace = {
         # BIN_CMP
-        r'eq\?\s': '@eq ',
-        r'<\s': '@lt ',
-        r'<=\s': '@le ',
-        r'>\s': '@gt ',
-        r'>=\s': '@ge ',
+        r'eq\?\s': '@eq  ',
+        r'<\s': '@lt  ',
+        r'<=\s': '@le  ',
+        r'>\s': '@gt  ',
+        r'>=\s': '@ge  ',
         # BOOL
         # \1: 't' or 'f'
         # \2: extra captured token, needs to be put back
         r'#([tf])(\s|\]|\))': r'#\1 \2',
+        # vector operations
+        r'vector\s': '@vector  ',
+        r'vector-ref\s': '@vector-ref  ',
+        r'vector-set!\s': '@vector-set  ',
     }
 
     for pat, repl in replace.iteritems():
@@ -75,7 +82,7 @@ def SchemeLexer():
         return t
 
     def t_BOOL(t):
-        r'\#[tf]\s'  # valid bools are attached with a ' '
+        r'\#[tf]\s'  # valid bools are attached with a whitespace ' '
         t.value = t.value.rstrip()
         return t
 
@@ -88,6 +95,21 @@ def SchemeLexer():
         r'@((eq)|([lg][et]))'
         m = {'@eq': 'eq?', '@lt': '<', '@le': '<=', '@gt': '>', '@ge': '>='}
         t.value = m[t.value]
+        return t
+
+    def t_VECTOR_INIT(t):
+        r'@vector\s'  # valid vector op are attached with a whitespace ' '
+        t.value = 'vector'
+        return t
+
+    def t_VECTOR_REF(t):
+        r'@vector-ref\s'  # valid vector op are attached with a whitespace ' '
+        t.value = 'vector-ref'
+        return t
+
+    def t_VECTOR_SET(t):
+        r'@vector-set\s'  # valid vector op are attached with a whitespace ' '
+        t.value = 'vector-set!'
         return t
 
     def t_LINE_COMMENT(t):
@@ -135,10 +157,11 @@ if __name__ == '__main__':
     #!0xff!!!0_o!^_^aaa!!!#
     #! #! #!!!!#
 
-    (let  ([foo 36])
-        (eq? (and #t 2) 5)
+    ; The code might not be syntactically valid.
+
+    (let  ([foo 36] (bar (vector 1 2 3)))
+        (eq? (and #t 2) (vector-set! bar 2 (vector-ref bar 1))))
     )
-    ; 42
     '''
     test_data = LexPreprocess(test_data)
     sc_lexer = SchemeLexer()
