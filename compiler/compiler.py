@@ -388,23 +388,6 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
         assert len(self._builder.var_list) == len(GetNodeVarList(node))
         self._ast = MakeX86ProgramNode(-1, self._builder.var_list, instr_list)
         return instr_list
-        # # prologue, this should be added later for all function call
-        # self._builder.AddInstr(MakeX86CallCNode(X86_CALLC_PROLOGUE))
-        # self._VisitStmtList(GetNodeStmtList(node))
-
-        # # call the runtime PrintPtr
-        # # movq    %rax, %rdi
-        # # callq   _PrintPtr
-        # last_stmt = self._builder.GetStmt(-1)
-        # assert IsX86SiRetNode(last_stmt)
-        # SetX86SiRetFromFunc(last_stmt, False)  # return from program
-        # self._builder.ChangeStmt(-1, last_stmt)
-
-        # # epilogue, this should be added later for all function call
-        # self._builder.AddInstr(MakeX86CallCNode(X86_CALLC_EPILOGUE))
-
-        # assert len(self._builder.var_list) == len(
-        #     GetNodeVarList(node))
 
     def VisitAssign(self, node):
         instr_list = []
@@ -905,10 +888,6 @@ def AllocateRegisterOrStack(x86_ast, use_mr=True, rm_same_mov=True):
 
     var_assigned_loc_map, stack_sz = _AllocateRegisterOrStack(ig, mrg, use_mr)
     assert len(var_assigned_loc_map) == len(GetNodeVarList(x86_ast))
-    # for var in GetNodeVarList(x86_ast):
-    #     var_name = GetNodeVar(var)
-    #     print('{} assinged to {}'.format(
-    #         var_name, var_assigned_loc_map[var_name]))
 
     instr_list = GetX86ProgramInstrList(x86_ast)
     instr_list = _AssignAllocatedLocByInstrList(
