@@ -95,7 +95,7 @@ def SchemeParser():
         p[0] = MakeSchVectorInitNode(p[3])
 
     def p_expr_vector_ref(p):
-        'expr : LPAREN VECTOR_REF expr expr RPAREN'
+        'expr : LPAREN VECTOR_REF expr arg_int RPAREN'
         p[0] = MakeSchVectorRefNode(p[3], p[4])
 
     def p_expr_vector_set(p):
@@ -134,5 +134,4 @@ if __name__ == '__main__':
     lexer = lexer.SchemeLexer()
     parser = SchemeParser()
     ast = parser.parse(test_data, lexer=lexer)
-    # print(ast)
     print(SchSourceCode(ast))
