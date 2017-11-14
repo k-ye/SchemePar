@@ -1,4 +1,5 @@
 from base import *
+from static_types import *
 from src_code_gen import *
 
 ''' Scheme specific
@@ -12,9 +13,6 @@ _SCH_APPLY_P_EXPR_LIST = 'expr_list'
 
 _NODE_TC = TypeChain(NODE_T, None)
 _EXPR_TC = TypeChain(EXPR_NODE_T, _NODE_TC)
-
-# # evaluate type that is inferenced.
-# _P_INFER_EVAL_TYPE = 'infer_eval_type'
 
 
 def _MakeSchNode(type, parent_tc):
@@ -40,6 +38,11 @@ def MakeSchVarNode(var):
 def MakeSchBoolNode(b):
     node = _MakeSchExprNode(BOOL_NODE_T)
     SetProperty(node, NODE_P_BOOL, b)
+    return node
+
+
+def MakeSchVoidNode():
+    node = _MakeSchExprNode(VOID_NODE_T)
     return node
 
 
@@ -167,12 +170,10 @@ def SchRtmFns():
 
 
 class SchEvalTypes(object):
-    INT = 'int'
-    BOOL = 'bool'
     _rtm_types = {
-        'read': INT,
-        'read_int': INT,
-        'read_bool': BOOL,
+        'read': StaticTypes.INT,
+        'read_int': StaticTypes.INT,
+        'read_bool': StaticTypes.BOOL,
     }
 
     @staticmethod
@@ -209,12 +210,23 @@ class SchAstVisitorBase(object):
         '''
         return visit_result
 
+    def _PreVisitNode(self, node):
+        '''Optional to override
+        '''
+        pass
+
+    def _PostVisitNode(self, node, visit_result):
+        '''Optional to override
+        '''
+        pass
+
     def _Visit(self, node):
         '''Do NOT override
         '''
         assert LangOf(node) == SCH_LANG, LangOf(node)
         ndtype = TypeOf(node)
         result = None
+        self._PreVisitNode(node)
         if ndtype == PROGRAM_NODE_T:
             result = self.VisitProgram(node)
         elif ndtype == APPLY_NODE_T:
@@ -235,8 +247,11 @@ class SchAstVisitorBase(object):
             result = self.VisitVar(node)
         elif ndtype == BOOL_NODE_T:
             result = self.VisitBool(node)
+        elif ndtype == VOID_NODE_T:
+            result = self.VisitVoid(node)
         else:
             raise RuntimeError("Unknown Scheme node type={}".format(ndtype))
+        self._PostVisitNode(node, result)
         return result
 
     def VisitProgram(self, node):
@@ -289,6 +304,11 @@ class SchAstVisitorBase(object):
         '''
         return node
 
+    def VisitVoid(self, node):
+        '''Override
+        '''
+        return node
+
 
 '''Build source code from a Scheme AST
 '''
@@ -304,6 +324,13 @@ class _SchSourceCodeVisitor(SchAstVisitorBase):
 
     def _EndVisit(self, node, visit_result):
         return self._builder.Build()
+
+    def _PreVisitNode(self, node):
+        if HasProperty(node, P_STATIC_TYPE):
+            static_type = GetNodeStaticType(node)
+            self._builder.Append('; static_type: {}'.format(
+                StaticTypes.Str(static_type)))
+            self._builder.NewLine()
 
     def VisitProgram(self, node):
         self._Visit(GetSchProgram(node))
@@ -417,6 +444,10 @@ class _SchSourceCodeVisitor(SchAstVisitorBase):
 
     def VisitBool(self, node):
         self._builder.Append(GetNodeBool(node))
+        return node
+
+    def VisitVoid(self, node):
+        self._builder.Append('( void )')
         return node
 
 

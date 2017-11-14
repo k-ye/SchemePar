@@ -1,11 +1,13 @@
 from __future__ import print_function
 
 from ast.base import *
+from ast.static_types import *
 from ast.sch_ast import *
 from ast.scoped_env import ScopedEnv, ScopedEnvNode
 
 import lexer
 from parser import SchemeParser
+
 
 class AnalyzeError(Exception):
     pass
@@ -54,51 +56,52 @@ class _SchAnalyzer(SchAstVisitorBase):
         self._env = ScopedEnv(Factory())
 
     def VisitProgram(self, node):
-        return self._Visit(GetSchProgram(node))
+        static_type = self._Visit(GetSchProgram(node))
+        SetNodeStaticType(node, static_type)
+        return static_type
 
     def VisitApply(self, node):
         method = GetNodeMethod(node)
         expr_list = GetSchApplyExprList(node)
-        result = None
+        static_type = None
         if IsSchArithop(method):
-            result = self._VisitArithOp(node, method, expr_list)
+            static_type = self._VisitArithOp(node, method, expr_list)
         elif IsSchCmpOp(method):
-            result = self._VisitCmpOp(node, method, expr_list)
+            static_type = self._VisitCmpOp(node, method, expr_list)
         elif IsSchLogicalOp(method):
-            result = self._VisitLogicalOp(node, method, expr_list)
+            static_type = self._VisitLogicalOp(node, method, expr_list)
         elif IsSchRtmFn(method):
-            result = self._VisitRtmFn(node, method, expr_list)
+            static_type = self._VisitRtmFn(node, method, expr_list)
         else:
             raise NotImplementedError(
                 'method={} is not yet supported'.format(method))
-        return result
+        SetNodeStaticType(node, static_type)
+        return static_type
 
-    def _CheckFailed(self, msg):
-        raise AnalyzeError('Analyzation failed! ' + msg)
-        return False
+    def _CheckCondition(self, cond, msg):
+        if not cond:
+            raise AnalyzeError('Analyzation failed! ' + msg)
+        return cond
 
     def _CheckApplyArity(self, method, expected, expr_list):
         actual = len(expr_list)
-        if actual != expected:
-            msg = 'Arity did not match for method={}, expected={}, actual={}'.format(
-                method, expected, actual)
-            return self._CheckFailed(msg)
-        return True
+        msg = 'Arity did not match for method={}, expected={}, actual={}'.format(
+            method, expected, actual)
+        return self._CheckCondition(actual == expected, msg)
 
     def _CheckTypeMatch(self, expected, actual):
-        if actual != expected:
-            msg = 'Type mismatch, expected={}, actual={}'.format(
-                expected, actual)
-            return self._CheckFailed(msg)
-        return True
+        msg = 'Type mismatch, expected={}, actual={}'.format(expected, actual)
+        return self._CheckCondition(actual == expected, msg)
 
     def _VisitArithOp(self, node, method, expr_list):
         expect_map = {'+': 2, '-': 1}
         self._CheckApplyArity(method, expect_map[method], expr_list)
         for e in expr_list:
             e_type = self._Visit(e)
-            self._CheckTypeMatch(SchEvalTypes.INT, e_type)
-        return SchEvalTypes.INT
+            self._CheckTypeMatch(StaticTypes.INT, e_type)
+        static_type = StaticTypes.INT
+        SetNodeStaticType(node, static_type)
+        return static_type
 
     def _VisitCmpOp(self, node, method, expr_list):
         expect_map = {'eq?': 2, '<': 2, '<=': 2, '>': 2, '>=': 2}
@@ -109,21 +112,29 @@ class _SchAnalyzer(SchAstVisitorBase):
         if method == 'eq?':
             self._CheckTypeMatch(lhs_type, rhs_type)
         else:
-            self._CheckTypeMatch(SchEvalTypes.INT, lhs_type)
-            self._CheckTypeMatch(SchEvalTypes.INT, rhs_type)
-        return SchEvalTypes.BOOL
+            self._CheckTypeMatch(StaticTypes.INT, lhs_type)
+            self._CheckTypeMatch(StaticTypes.INT, rhs_type)
+
+        static_type = StaticTypes.BOOL
+        SetNodeStaticType(node, static_type)
+        return static_type
 
     def _VisitLogicalOp(self, node, method, expr_list):
         expect_map = {'and': 2, 'or': 2, 'not': 1}
         self._CheckApplyArity(method, expect_map[method], expr_list)
         for e in expr_list:
             e_type = self._Visit(e)
-            self._CheckTypeMatch(SchEvalTypes.BOOL, e_type)
-        return SchEvalTypes.BOOL
+            self._CheckTypeMatch(StaticTypes.BOOL, e_type)
+
+        static_type = StaticTypes.BOOL
+        SetNodeStaticType(node, static_type)
+        return static_type
 
     def _VisitRtmFn(self, node, method, expr_list):
         self._CheckApplyArity(method, 0, expr_list)
-        return SchEvalTypes.RtmFnType(method)
+        static_type = SchEvalTypes.RtmFnType(method)
+        SetNodeStaticType(node, static_type)
+        return static_type
 
     def VisitLet(self, node):
         let_var_types = {}
@@ -136,24 +147,82 @@ class _SchAnalyzer(SchAstVisitorBase):
         with self._env.Scope():
             for var_name, var_type in let_var_types.iteritems():
                 self._env.Add(var_name, var_type)
-            return self._Visit(GetSchLetBody(node))
+
+            static_type = self._Visit(GetSchLetBody(node))
+            SetNodeStaticType(node, static_type)
+            return static_type
 
     def VisitIf(self, node):
         cond = GetIfCond(node)
-        self._CheckTypeMatch(SchEvalTypes.BOOL, self._Visit(cond))
+        self._CheckTypeMatch(StaticTypes.BOOL, self._Visit(cond))
         then, els = GetIfThen(node), GetIfElse(node)
         then_type, else_type = self._Visit(then), self._Visit(els)
         self._CheckTypeMatch(then_type, else_type)
-        return then_type
+
+        static_type = then_type
+        SetNodeStaticType(node, static_type)
+        return static_type
+
+    def VisitVectorInit(self, node):
+        st_list = []
+        for arg in GetNodeArgList(node):
+            st_list.append(self._Visit(arg))
+
+        static_type = MakeStaticTypeVector(st_list)
+        SetNodeStaticType(node, static_type)
+        return static_type
+
+    def VisitVectorRef(self, node):
+        vec_static_type = self._Visit(GetVectorNodeVec(node))
+        msg = 'Expected a vector static type, actual={}'.format(
+            StaticTypes.Str(vec_static_type))
+        self._CheckCondition(IsValidStaticTypeVector(vec_static_type), msg)
+
+        idx_node = GetVectorNodeIndex(node)
+        self._CheckTypeMatch(StaticTypes.INT, self._Visit(idx_node))
+        idx = GetIntX(idx_node)
+
+        static_type = GetVectorStaticTypeAt(vec_static_type, idx)
+        SetNodeStaticType(node, static_type)
+        return static_type
+
+    def VisitVectorSet(self, node):
+        vec_static_type = self._Visit(GetVectorNodeVec(node))
+        msg = 'Expected a vector static type, actual={}'.format(
+            StaticTypes.Str(vec_static_type))
+        self._CheckCondition(IsValidStaticTypeVector(vec_static_type), msg)
+
+        idx_node = GetVectorNodeIndex(node)
+        self._CheckTypeMatch(StaticTypes.INT, self._Visit(idx_node))
+        idx = GetIntX(idx_node)
+
+        expect_static_type = GetVectorStaticTypeAt(vec_static_type, idx)
+        actual_static_type = self._Visit(GetVectorSetVal(node))
+        self._CheckTypeMatch(expect_static_type, actual_static_type)
+
+        static_type = StaticTypes.VOID
+        SetNodeStaticType(node, static_type)
+        return static_type
 
     def VisitInt(self, node):
-        return SchEvalTypes.INT
+        static_type = StaticTypes.INT
+        SetNodeStaticType(node, static_type)
+        return static_type
 
     def VisitVar(self, node):
-        return self._env.Get(GetNodeVar(node))
+        static_type = self._env.Get(GetNodeVar(node))
+        SetNodeStaticType(node, static_type)
+        return static_type
 
     def VisitBool(self, node):
-        return SchEvalTypes.BOOL
+        static_type = StaticTypes.BOOL
+        SetNodeStaticType(node, static_type)
+        return static_type
+
+    def VisitVoid(self, node):
+        static_type = StaticTypes.VOID
+        SetNodeStaticType(node, static_type)
+        return static_type
 
 
 def analyze(node):
@@ -164,8 +233,8 @@ def analyze(node):
 if __name__ == '__main__':
     test_data = '''
     ; a test Scheme program using R2 grammar
-    (let ([foo 43] [bar (- 1)])
-        (if #t (+ foo bar) (read))
+    (let ([foo 43] [bar (- 1)] (x (vector 42 1 #t (vector 5))))
+        (if #t (+ foo bar) (vector-ref (vector-ref x 3) 0))
     )
     '''
     test_data = lexer.LexPreprocess(test_data)
@@ -173,5 +242,6 @@ if __name__ == '__main__':
     lexer = lexer.SchemeLexer()
     parser = SchemeParser()
     ast = parser.parse(test_data, lexer=lexer)
+
+    analyze(ast)
     print(SchSourceCode(ast))
-    print(analyze(ast))
