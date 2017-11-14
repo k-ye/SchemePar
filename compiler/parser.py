@@ -15,7 +15,8 @@ def SchemeParser():
     def p_expr_arg(p):
         '''expr : arg_int
                 | arg_var
-                | arg_bool'''
+                | arg_bool
+                | arg_void'''
         p[0] = p[1]
 
     def p_expr_int(p):
@@ -29,6 +30,10 @@ def SchemeParser():
     def p_expr_bool(p):
         'arg_bool : BOOL'
         p[0] = MakeSchBoolNode(p[1])
+
+    def p_expr_void(p):
+        'arg_void : LPAREN VOID RPAREN'
+        p[0] = MakeSchVoidNode()
 
     def p_expr_let(p):
         'expr : LPAREN let_inner RPAREN'
@@ -120,7 +125,7 @@ def SchemeParser():
 if __name__ == '__main__':
     test_data = '''
     ; a test Scheme program using R2 grammar
-    (let ([foo 43] [bar (- 1)] [x (vector (vector foo) 42 #t)])
+    (let ([foo 43] [bar (- 1)] [x (vector (vector foo (void)) 42 #t)])
         (if #t (+ foo bar) (vector-ref x 1))
     )
     '''
