@@ -10,6 +10,7 @@ keywords = {
     'and': 'LOGICAL_OP',
     'or': 'LOGICAL_OP',
     'not': 'LOGICAL_OP',
+    'void': 'VOID'
 }
 keywords.update({r: 'RTM_FN' for r in SchRtmFns()})
 
@@ -160,7 +161,7 @@ if __name__ == '__main__':
     ; The code might not be syntactically valid.
 
     (let  ([foo 36] (bar (vector 1 2 3)))
-        (eq? (and #t 2) (vector-set! bar 2 (vector-ref bar 1))))
+        (eq? (and #t 2) (vector-set! bar (void) (vector-ref bar 1))))
     )
     '''
     test_data = LexPreprocess(test_data)
