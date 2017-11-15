@@ -99,7 +99,7 @@ def SchemeParser():
         p[0] = MakeSchVectorRefNode(p[3], p[4])
 
     def p_expr_vector_set(p):
-        'expr : LPAREN VECTOR_SET expr expr expr RPAREN'
+        'expr : LPAREN VECTOR_SET expr arg_int expr RPAREN'
         vec, idx, val = p[3], p[4], p[5]
         p[0] = MakeSchVectorSetNode(vec, idx, val)
 
