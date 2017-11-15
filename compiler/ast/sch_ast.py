@@ -35,6 +35,10 @@ def MakeSchVarNode(var):
     return node
 
 
+def IsSchVarNode(var):
+    return LangOf(node) == SCH_LANG and TypeOf(node) == VAR_NODE_T
+
+
 def MakeSchBoolNode(b):
     node = _MakeSchExprNode(BOOL_NODE_T)
     SetProperty(node, NODE_P_BOOL, b)
@@ -165,6 +169,35 @@ def IsSchVectorSetNode(node):
     return LangOf(node) == SCH_LANG and TypeOf(node) == VECTOR_SET_NODE_T
 
 
+def MakeSchInternalCollectNode(bytes):
+    node = _MakeSchExprNode(INTERNAL_COLLECT_NODE_T)
+    SetProperty(node, COLLECT_P_BYTES, bytes)
+    SetNodeStaticType(node, StaticTypes.VOID)
+    return node
+
+
+def IsSchInternalCollectNode(node):
+    return LangOf(node) == SCH_LANG and TypeOf(node) == INTERNAL_COLLECT_NODE_T
+
+
+def MakeSchInternalAllocateNode(len, static_type):
+    node = _MakeSchExprNode(INTERNAL_ALLOCATE_NODE_T)
+    SetProperty(node, ALLOCATE_P_LEN, len)
+    SetNodeStaticType(node, static_type)
+    return node
+
+
+def IsSchInternalAllocateNode(node):
+    return LangOf(node) == SCH_LANG and TypeOf(node) == INTERNAL_ALLOCATE_NODE_T
+
+
+def MakeSchGlobalValueNode(name):
+    node = _MakeSchExprNode(INTERNAL_GLOBAL_VALUE_NODE_T)
+    SetProperty(node, GLOBAL_VALUE_P_NAME, name)
+    SetNodeStaticType(node, StaticTypes.INT)
+    return node
+
+
 def SchRtmFns():
     return ['read', 'read_int', 'read_bool', ]
 
@@ -249,6 +282,12 @@ class SchAstVisitorBase(object):
             result = self.VisitBool(node)
         elif ndtype == VOID_NODE_T:
             result = self.VisitVoid(node)
+        elif ndtype == INTERNAL_COLLECT_NODE_T:
+            result = self.VisitInternalCollect(node)
+        elif ndtype == INTERNAL_ALLOCATE_NODE_T:
+            result = self.VisitInternalAllocate(node)
+        elif ndtype == INTERNAL_GLOBAL_VALUE_NODE_T:
+            result = self.VisitInternalGlobalValue(node)
         else:
             raise RuntimeError("Unknown Scheme node type={}".format(ndtype))
         self._PostVisitNode(node, result)
@@ -309,6 +348,20 @@ class SchAstVisitorBase(object):
         '''
         return node
 
+    def VisitInternalCollect(self, node):
+        '''Override
+        '''
+        return node
+
+    def VisitInternalAllocate(self, node):
+        '''Override
+        '''
+        return node
+
+    def VisitInternalGlobalValue(self, node):
+        '''Override
+        '''
+        return node
 
 '''Build source code from a Scheme AST
 '''
@@ -448,6 +501,22 @@ class _SchSourceCodeVisitor(SchAstVisitorBase):
 
     def VisitVoid(self, node):
         self._builder.Append('( void )')
+        return node
+
+    def VisitInternalCollect(self, node):
+        bytes = GetInternalCollectNodeBytes(node)
+        self._builder.Append('( _collect {} )'.format(bytes))
+        return node
+
+    def VisitInternalAllocate(self, node):
+        len = GetInternalAllocateNodeLen(node)
+        static_type = StaticTypes.Str(GetNodeStaticType(node))
+        self._builder.Append('( _allocate {} {} )'.format(len, static_type))
+        return node
+
+    def VisitInternalGlobalValue(self, node):
+        name = GetInternalGlobalValueNodeName(node)
+        self._builder.Append('( global_value "{}" )'.format(name))
         return node
 
 

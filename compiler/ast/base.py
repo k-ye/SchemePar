@@ -109,13 +109,16 @@ ARG_NODE_T = 'arg'
 STMT_NODE_T = 'stmt'
 APPLY_NODE_T = 'apply'
 PROGRAM_NODE_T = 'program'
-VOID_NODE_T = 'void'
 
 IF_NODE_T = 'if'
 
 VECTOR_INIT_NODE_T = 'vector_init'
 VECTOR_REF_NODE_T = 'vector_ref'
 VECTOR_SET_NODE_T = 'vector_set'
+
+INTERNAL_COLLECT_NODE_T = '_gc_collect'
+INTERNAL_ALLOCATE_NODE_T = '_allocate'
+INTERNAL_GLOBAL_VALUE_NODE_T = '_global_value'
 
 '''Common Node Property Names
 '''
@@ -135,6 +138,12 @@ VECTOR_P_VEC = 'vec'
 VECTOR_P_INDEX = 'idx'
 VECTOR_SET_P_VAL = 'val'
 
+COLLECT_P_BYTES = 'collect_p_bytes'
+ALLOCATE_P_LEN = 'allocate_p_len'
+# ALLOCATE_P_STATIC_TYPE = 'allocate_p_static_type'
+GLOBAL_VALUE_P_NAME = 'global_p_name'
+
+
 ''' Common Node Operations
 '''
 
@@ -150,7 +159,7 @@ def SetIntX(node, x):
 
 
 def GetNodeVar(node):
-    return GetProperty(node, VAR_NODE_T)
+    return GetProperty(node, NODE_P_VAR)
 
 
 def SetNodeVar(node, var):
@@ -257,3 +266,43 @@ def GetVectorSetVal(node):
 def SetVectorSetVal(node, val):
     assert TypeOf(node) == VECTOR_SET_NODE_T
     SetProperty(node, VECTOR_SET_P_VAL, val)
+
+
+def GetInternalCollectNodeBytes(node):
+    assert TypeOf(node) == INTERNAL_COLLECT_NODE_T
+    return GetProperty(node, COLLECT_P_BYTES)
+
+
+def SetInternalCollectNodeBytes(node, bytes):
+    assert TypeOf(node) == INTERNAL_COLLECT_NODE_T
+    SetProperty(node, COLLECT_P_BYTES, bytes)
+
+
+def GetInternalAllocateNodeLen(node):
+    assert TypeOf(node) == INTERNAL_ALLOCATE_NODE_T
+    return GetProperty(node, ALLOCATE_P_LEN)
+
+
+def SetInternalAllocateNodeLen(node, len):
+    assert TypeOf(node) == INTERNAL_ALLOCATE_NODE_T
+    SetProperty(node, ALLOCATE_P_LEN, len)
+
+
+# def GetInternalAllocateNodeStaticType(node):
+#     assert TypeOf(node) == INTERNAL_ALLOCATE_NODE_T
+#     return GetProperty(node, ALLOCATE_P_STATIC_TYPE)
+
+
+# def SetInternalAllocateNodeStaticType(node, static_type):
+#     assert TypeOf(node) == INTERNAL_ALLOCATE_NODE_T
+#     SetProperty(node, ALLOCATE_P_STATIC_TYPE, static_type)
+
+
+def GetInternalGlobalValueNodeName(node):
+    assert TypeOf(node) == INTERNAL_GLOBAL_VALUE_NODE_T
+    return GetProperty(node, GLOBAL_VALUE_P_NAME)
+
+
+def SetInternalGlobalValueNodeName(node, name):
+    assert TypeOf(node) == INTERNAL_GLOBAL_VALUE_NODE_T
+    SetProperty(node, GLOBAL_VALUE_P_NAME, name)

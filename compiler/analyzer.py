@@ -224,6 +224,15 @@ class _SchAnalyzer(SchAstVisitorBase):
         SetNodeStaticType(node, static_type)
         return static_type
 
+    def VisitInternalCollect(self, node):
+        raise AnalyzeError('Collect is unexpected in type analysis pass.')
+
+    def VisitInternalAllocate(self, node):
+        raise AnalyzeError('Allocate is unexpected in type analysis pass.')
+
+    def VisitInternalGlobalValue(self, node):
+        raise AnalyzeError('GlobalValue is unexpected in type analysis pass.')
+
 
 def analyze(node):
     analyzer = _SchAnalyzer()

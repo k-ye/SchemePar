@@ -18,6 +18,90 @@ based on static information. i.e. duplicate variable definition in
 the *SAME* scope, type matching. We leave that for later excercises.
 '''
 
+'''Expose-Allocation pass
+'''
+
+
+class _ExposeAllocationVisitor(SchAstVisitorBase):
+
+    def __init__(self):
+        super(_ExposeAllocationVisitor, self).__init__()
+
+    def VisitProgram(self, node):
+        SetSchProgram(node, self._Visit(GetSchProgram(node)))
+        return node
+
+    def VisitApply(self, node):
+        new_expr_list = []
+        for app_expr in GetSchApplyExprList(node):
+            new_expr_list.append(self._Visit(app_expr))
+        SetSchApplyExprList(node, new_expr_list)
+        return node
+
+    def VisitLet(self, node):
+        new_var_list = [(self._Visit(var), self._Visit(var_init))
+                        for var, var_init in GetNodeVarList(node)]
+        SetNodeVarList(node, new_var_list)
+        SetSchLetBody(node, self._Visit(GetSchLetBody(node)))
+        return node
+
+    def VisitIf(self, node):
+        SetIfCond(node, self._Visit(GetIfCond(node)))
+        SetIfThen(node, self._Visit(GetIfThen(node)))
+        SetIfElse(node, self._Visit(GetIfElse(node)))
+        return node
+
+    def _FindUniqueVarNamePrefix(self, arg_list):
+        max_varlen = 3  # the minimu length of the prefix is 3
+        for arg in arg_list:
+            if IsSchVarNode(arg):
+                max_varlen = max(max_varlen, len(GetNodeVar(arg)))
+        return GenerateRandomAlnumString(max_varlen) + '_'
+
+    def VisitVectorInit(self, node):
+        arg_list = GetNodeArgList(node)
+        tmp_prefix = self._FindUniqueVarNamePrefix(arg_list)
+
+        return node
+
+    def VisitVectorRef(self, node):
+        SetVectorNodeVec(node, self._Visit(GetVectorNodeVec(node)))
+        SetVectorNodeIndex(node, self._Visit(GetVectorNodeIndex(node)))
+        return node
+
+    def VisitVectorSet(self, node):
+        SetVectorNodeVec(node, self._Visit(GetVectorNodeVec(node)))
+        SetVectorNodeIndex(node, self._Visit(GetVectorNodeIndex(node)))
+        SetVectorSetVal(node, self._Visit(GetVectorSetVal(node)))
+        return node
+
+    def VisitInt(self, node):
+        # primitive does not contain sub nodes, hence return directly
+        return node
+
+    def VisitVar(self, node):
+        # primitive does not contain sub nodes, hence return directly
+        return node
+
+    def VisitBool(self, node):
+        # primitive does not contain sub nodes, hence return directly
+        return node
+
+    def VisitVoid(self, node):
+        # primitive does not contain sub nodes, hence return directly
+        return node
+
+    def VisitInternalCollect(self, node):
+        raise CompilingError('Collect is unexpected in Expose-Allocation pass.')
+
+    def VisitInternalAllocate(self, node):
+        raise CompilingError(
+            'Allocate is unexpected in Expose-Allocation pass.')
+
+    def VisitInternalGlobalValue(self, node):
+        raise CompilingError(
+            'GlobalValue is unexpected in Expose-Allocation pass.')
+
 
 ''' Uniquify pass
 This pass uniquifies all the variable names in the Scheme AST. In another word,
