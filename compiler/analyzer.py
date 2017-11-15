@@ -178,9 +178,7 @@ class _SchAnalyzer(SchAstVisitorBase):
             StaticTypes.Str(vec_static_type))
         self._CheckCondition(IsValidStaticTypeVector(vec_static_type), msg)
 
-        idx_node = GetVectorNodeIndex(node)
-        self._CheckTypeMatch(StaticTypes.INT, self._Visit(idx_node))
-        idx = GetIntX(idx_node)
+        idx = GetVectorNodeIndex(node)
 
         static_type = GetVectorStaticTypeAt(vec_static_type, idx)
         SetNodeStaticType(node, static_type)
@@ -192,9 +190,7 @@ class _SchAnalyzer(SchAstVisitorBase):
             StaticTypes.Str(vec_static_type))
         self._CheckCondition(IsValidStaticTypeVector(vec_static_type), msg)
 
-        idx_node = GetVectorNodeIndex(node)
-        self._CheckTypeMatch(StaticTypes.INT, self._Visit(idx_node))
-        idx = GetIntX(idx_node)
+        idx = GetVectorNodeIndex(node)
 
         expect_static_type = GetVectorStaticTypeAt(vec_static_type, idx)
         actual_static_type = self._Visit(GetVectorSetVal(node))

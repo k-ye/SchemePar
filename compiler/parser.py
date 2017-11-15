@@ -3,6 +3,7 @@ from __future__ import print_function
 import ply.yacc as yacc
 import lexer
 from ast.sch_ast import *
+from ast.base import GetIntX
 
 tokens = lexer.tokens
 
@@ -96,12 +97,15 @@ def SchemeParser():
 
     def p_expr_vector_ref(p):
         'expr : LPAREN VECTOR_REF expr arg_int RPAREN'
-        p[0] = MakeSchVectorRefNode(p[3], p[4])
+        vec, idx = p[3], p[4]
+        assert IsSchIntNode(idx)
+        p[0] = MakeSchVectorRefNode(vec, GetIntX(idx))
 
     def p_expr_vector_set(p):
         'expr : LPAREN VECTOR_SET expr arg_int expr RPAREN'
         vec, idx, val = p[3], p[4], p[5]
-        p[0] = MakeSchVectorSetNode(vec, idx, val)
+        assert IsSchIntNode(idx)
+        p[0] = MakeSchVectorSetNode(vec, GetIntX(idx), val)
 
     def p_empty(p):
         'empty :'

@@ -29,6 +29,10 @@ def MakeSchIntNode(x):
     return node
 
 
+def IsSchIntNode(node):
+    return LangOf(node) == SCH_LANG and TypeOf(node) == INT_NODE_T
+
+
 def MakeSchVarNode(var):
     node = _MakeSchExprNode(VAR_NODE_T)
     SetProperty(node, NODE_P_VAR, var)
@@ -147,6 +151,7 @@ def IsSchVectorInitNode(node):
 
 
 def MakeSchVectorRefNode(vec, idx):
+    assert isinstance(idx, int)
     node = _MakeSchExprNode(VECTOR_REF_NODE_T)
     SetProperty(node, VECTOR_P_VEC, vec)
     SetProperty(node, VECTOR_P_INDEX, idx)
@@ -158,6 +163,7 @@ def IsSchVectorRefNode(node):
 
 
 def MakeSchVectorSetNode(vec, idx, val):
+    assert isinstance(idx, int)
     node = _MakeSchExprNode(VECTOR_SET_NODE_T)
     SetProperty(node, VECTOR_P_VEC, vec)
     SetProperty(node, VECTOR_P_INDEX, idx)
@@ -468,7 +474,7 @@ class _SchSourceCodeVisitor(SchAstVisitorBase):
             builder.NewLine()
             self._Visit(GetVectorNodeVec(node))
             builder.NewLine()
-            self._Visit(GetVectorNodeIndex(node))
+            builder.Append(GetVectorNodeIndex(node))
         builder.NewLine()
         builder.Append(')')
         return node
@@ -480,7 +486,7 @@ class _SchSourceCodeVisitor(SchAstVisitorBase):
             builder.NewLine()
             self._Visit(GetVectorNodeVec(node))
             builder.NewLine()
-            self._Visit(GetVectorNodeIndex(node))
+            builder.Append(GetVectorNodeIndex(node))
             builder.NewLine()
             self._Visit(GetVectorSetVal(node))
         builder.NewLine()
