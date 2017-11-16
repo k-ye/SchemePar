@@ -39,7 +39,7 @@ def MakeSchVarNode(var):
     return node
 
 
-def IsSchVarNode(var):
+def IsSchVarNode(node):
     return LangOf(node) == SCH_LANG and TypeOf(node) == VAR_NODE_T
 
 
@@ -150,6 +150,16 @@ def IsSchVectorInitNode(node):
     return LangOf(node) == SCH_LANG and TypeOf(node) == VECTOR_INIT_NODE_T
 
 
+def GetSchVectorInitNodeLen(node):
+    assert IsSchVectorInitNode(node)
+    return len(GetNodeArgList(node))
+
+
+def GetSchVectorInitNodeBytes(node):
+    assert IsSchVectorInitNode(node)
+    return (len(GetNodeArgList(node)) + 1) * 8
+
+
 def MakeSchVectorRefNode(vec, idx):
     assert isinstance(idx, int)
     node = _MakeSchExprNode(VECTOR_REF_NODE_T)
@@ -176,6 +186,7 @@ def IsSchVectorSetNode(node):
 
 
 def MakeSchInternalCollectNode(bytes):
+    assert isinstance(bytes, int)
     node = _MakeSchExprNode(INTERNAL_COLLECT_NODE_T)
     SetProperty(node, COLLECT_P_BYTES, bytes)
     SetNodeStaticType(node, StaticTypes.VOID)
@@ -187,6 +198,7 @@ def IsSchInternalCollectNode(node):
 
 
 def MakeSchInternalAllocateNode(len, static_type):
+    assert isinstance(len, int)
     node = _MakeSchExprNode(INTERNAL_ALLOCATE_NODE_T)
     SetProperty(node, ALLOCATE_P_LEN, len)
     SetNodeStaticType(node, static_type)

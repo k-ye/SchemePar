@@ -7,21 +7,37 @@ from compiler.parser import SchemeParser
 import compiler.analyzer as anlz
 from compiler.compiler import *
 
-if __name__ == '__main__':
+
+def main():
+    # test_data = '''
+    # (let ([foo 42] [bar (vector 1 2 3)])
+    #     (+
+    #         (let ([foo 3] [bar bar]) (+ foo bar))
+    #         foo
+    #     )
+    # )
+    # '''
+    # test_data = '''
+    # (if (not #t) (read_bool) #t)
+    # '''
+    # test_data = '(let ([x 42]) (let ([y x]) y))'
     test_data = '''
     ; a test Scheme program using R1 grammar
-    (let ([foo 42] [bar (- 3)])
-        (+
-            (let ([foo 3] [bar bar]) (+ foo bar))
-            foo
+
+    (let
+        (
+            [foo 1] [bar 2] [x 3] [y 4]
+        )
+        (let
+            (
+                [foo (vector foo bar x y)]
+                [bar 40]
+            )
+            (+ (vector-ref foo 2) bar )
         )
     )
     ; 42
     '''
-    test_data = '''
-    (if (not #t) (read_bool) #t)
-    '''
-    # test_data = '(let ([x 42]) (let ([y x]) y))'
     input_filename = None
     if len(sys.argv) > 1:
         input_filename = sys.argv[1]
@@ -46,8 +62,13 @@ if __name__ == '__main__':
 
     anlz.analyze(ast)
 
+    sch_ast = ExposeAllocation(ast)
+    PrintSourceCode('Scheme Expose-Allocation',
+                    SchSourceCode(sch_ast))
+    return
+
     sch_ast = Uniquify(ast)
-    PrintSourceCode('Source code after uniquify', SchSourceCode(sch_ast))
+    PrintSourceCode('Scheme Uniquify', SchSourceCode(sch_ast))
 
     ir_ast = Flatten(sch_ast)
     PrintSourceCode('IR source code', IrSourceCode(ir_ast))
@@ -87,3 +108,7 @@ if __name__ == '__main__':
         with open(output_filename, 'w') as wf:
             wf.write(x86_src_code)
             wf.write('\n')
+
+
+if __name__ == '__main__':
+    main()

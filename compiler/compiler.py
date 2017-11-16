@@ -60,18 +60,68 @@ class _ExposeAllocationVisitor(SchAstVisitorBase):
 
     def VisitVectorInit(self, node):
         arg_list = GetNodeArgList(node)
-        tmp_prefix = self._FindUniqueVarNamePrefix(arg_list)
+        tmp_prefix, counter = self._FindUniqueVarNamePrefix(arg_list), 0
+        let_var_list = []
+        for arg in arg_list:
+            tmp_var = MakeSchVarNode(tmp_prefix + str(counter))
+            counter += 1
+            SetNodeStaticType(tmp_var, GetNodeStaticType(arg))
+            let_var_list.append((tmp_var, self._Visit(arg)))
+        #  (if
+        #       (<
+        #           (+
+        #               (global-value 'free_ptr')
+        #               bytes
+        #           )
+        #           (global-value 'fromspace_end')
+        #       )
+        #       (void)
+        #       (collect bytes)
+        #   )
+        # skipped _Visit for this internally created Sch nodes
+        vec_len = GetSchVectorInitNodeLen(node)
+        vec_bytes = GetSchVectorInitNodeBytes(node)
+        vec_static_type = GetNodeStaticType(node)
 
-        return node
+        add_node = MakeSchApplyNode(
+            '+', [MakeSchGlobalValueNode('free_ptr'), MakeSchIntNode(vec_bytes)])
+        cmp_node = MakeSchApplyNode(
+            '<', [add_node, MakeSchGlobalValueNode('fromspace_end')])
+        void_node = MakeSchVoidNode()
+        collect_node = MakeSchInternalCollectNode(vec_bytes)
+        translated = MakeSchIfNode(cmp_node, void_node, collect_node)
+        SetNodeStaticType(translated, StaticTypes.VOID)
+        tmp_var = MakeSchVarNode(tmp_prefix + 'try_collect')
+        SetNodeStaticType(tmp_var, StaticTypes.VOID)
+        let_var_list.append((tmp_var, translated))
+
+        # (allocate len vec_static_type)
+        vec_var_node = MakeSchVarNode(tmp_prefix + 'new_vector')
+        SetNodeStaticType(vec_var_node, vec_static_type)
+        allocate_node = MakeSchInternalAllocateNode(
+            vec_len, vec_static_type)
+        let_var_list.append((vec_var_node, allocate_node))
+
+        inner_let_var_list = []
+        for i in xrange(vec_len):
+            # (vector-set! vec_var_node i x_i)
+            arg_i = let_var_list[i][0]
+            vec_set_node = MakeSchVectorSetNode(vec_var_node, i, arg_i)
+            tmp_var = MakeSchVarNode('{}unused_{}'.format(tmp_prefix, counter))
+            counter += 1
+            inner_let_var_list.append((tmp_var, vec_set_node))
+        inner_let_node = MakeSchLetNode(inner_let_var_list, vec_var_node)
+        SetNodeStaticType(inner_let_node, vec_static_type)
+        let_node = MakeSchLetNode(let_var_list, inner_let_node)
+        SetNodeStaticType(let_node, vec_static_type)
+        return let_node
 
     def VisitVectorRef(self, node):
         SetVectorNodeVec(node, self._Visit(GetVectorNodeVec(node)))
-        SetVectorNodeIndex(node, self._Visit(GetVectorNodeIndex(node)))
         return node
 
     def VisitVectorSet(self, node):
         SetVectorNodeVec(node, self._Visit(GetVectorNodeVec(node)))
-        SetVectorNodeIndex(node, self._Visit(GetVectorNodeIndex(node)))
         SetVectorSetVal(node, self._Visit(GetVectorSetVal(node)))
         return node
 
@@ -102,6 +152,15 @@ class _ExposeAllocationVisitor(SchAstVisitorBase):
         raise CompilingError(
             'GlobalValue is unexpected in Expose-Allocation pass.')
 
+
+def ExposeAllocation(ast):
+    '''
+    Make variable names globally unique.
+    |ast|: An SchNode. In production this should be an SchProgramNode. The
+            correctness should already be verified in the analysis pass.
+    '''
+    visitor = _ExposeAllocationVisitor()
+    return visitor.Visit(ast)
 
 ''' Uniquify pass
 This pass uniquifies all the variable names in the Scheme AST. In another word,
