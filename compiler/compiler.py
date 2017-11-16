@@ -56,7 +56,7 @@ class _ExposeAllocationVisitor(SchAstVisitorBase):
         for arg in arg_list:
             if IsSchVarNode(arg):
                 max_varlen = max(max_varlen, len(GetNodeVar(arg)))
-        return GenerateRandomAlnumString(max_varlen) + '_'
+        return GenerateRandomAlphaString(max_varlen) + '_'
 
     def VisitVectorInit(self, node):
         arg_list = GetNodeArgList(node)

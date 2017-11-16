@@ -429,8 +429,9 @@ class _SchSourceCodeVisitor(SchAstVisitorBase):
                 for var, var_init in GetNodeVarList(node):
                     builder.NewLine()
                     builder.Append('[')
-                    self._Visit(var)
                     with builder.Indent():
+                        builder.NewLine()
+                        self._Visit(var)
                         builder.NewLine()
                         self._Visit(var_init)
                     builder.NewLine()

@@ -143,6 +143,7 @@ class _SchAnalyzer(SchAstVisitorBase):
             var_type = self._Visit(var_init)
             assert var_name not in let_var_types
             let_var_types[var_name] = var_type
+            SetNodeStaticType(var, var_type)
 
         with self._env.Scope():
             for var_name, var_type in let_var_types.iteritems():
@@ -207,7 +208,10 @@ class _SchAnalyzer(SchAstVisitorBase):
 
     def VisitVar(self, node):
         static_type = self._env.Get(GetNodeVar(node))
-        SetNodeStaticType(node, static_type)
+        if HasProperty(node, P_STATIC_TYPE):
+            self._CheckTypeMatch(static_type, GetNodeStaticType(node))
+        else:
+            SetNodeStaticType(node, static_type)
         return static_type
 
     def VisitBool(self, node):
