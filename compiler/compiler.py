@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+from copy import deepcopy
 from ast.scoped_env import ScopedEnv, ScopedEnvNode
 from ast.base import *
 from ast.sch_ast import *
@@ -83,14 +84,24 @@ class _ExposeAllocationVisitor(SchAstVisitorBase):
         vec_bytes = GetSchVectorInitNodeBytes(node)
         vec_static_type = GetNodeStaticType(node)
 
+        added_bytes_node = MakeSchIntNode(vec_bytes)
+        SetNodeStaticType(added_bytes_node, StaticTypes.INT)
+
         add_node = MakeSchApplyNode(
-            '+', [MakeSchGlobalValueNode('free_ptr'), MakeSchIntNode(vec_bytes)])
+            '+', [MakeSchInternalGlobalValueNode('free_ptr'), added_bytes_node])
+        SetNodeStaticType(add_node, StaticTypes.INT)
+
         cmp_node = MakeSchApplyNode(
-            '<', [add_node, MakeSchGlobalValueNode('fromspace_end')])
+            '<', [add_node, MakeSchInternalGlobalValueNode('fromspace_end')])
+        SetNodeStaticType(cmp_node, StaticTypes.BOOL)
+
         void_node = MakeSchVoidNode()
+        SetNodeStaticType(void_node, StaticTypes.VOID)
+
         collect_node = MakeSchInternalCollectNode(vec_bytes)
         translated = MakeSchIfNode(cmp_node, void_node, collect_node)
         SetNodeStaticType(translated, StaticTypes.VOID)
+
         tmp_var = MakeSchVarNode(tmp_prefix + 'try_collect')
         SetNodeStaticType(tmp_var, StaticTypes.VOID)
         let_var_list.append((tmp_var, translated))
@@ -98,20 +109,30 @@ class _ExposeAllocationVisitor(SchAstVisitorBase):
         # (allocate len vec_static_type)
         vec_var_node = MakeSchVarNode(tmp_prefix + 'new_vector')
         SetNodeStaticType(vec_var_node, vec_static_type)
+
         allocate_node = MakeSchInternalAllocateNode(
             vec_len, vec_static_type)
-        let_var_list.append((vec_var_node, allocate_node))
+        let_var_list.append((deepcopy(vec_var_node), allocate_node))
 
         inner_let_var_list = []
         for i in xrange(vec_len):
+            # A new copy of the node must be created! Otherwise
+            # they will interfere in Uniquify pass.
+
             # (vector-set! vec_var_node i x_i)
             arg_i = let_var_list[i][0]
-            vec_set_node = MakeSchVectorSetNode(vec_var_node, i, arg_i)
+            vec_set_node = MakeSchVectorSetNode(
+                deepcopy(vec_var_node), i, deepcopy(arg_i))
+            SetNodeStaticType(vec_set_node, StaticTypes.VOID)
+
             tmp_var = MakeSchVarNode('{}unused_{}'.format(tmp_prefix, counter))
+            SetNodeStaticType(tmp_var, StaticTypes.VOID)
             counter += 1
             inner_let_var_list.append((tmp_var, vec_set_node))
-        inner_let_node = MakeSchLetNode(inner_let_var_list, vec_var_node)
+        inner_let_node = MakeSchLetNode(
+            inner_let_var_list, deepcopy(vec_var_node))
         SetNodeStaticType(inner_let_node, vec_static_type)
+
         let_node = MakeSchLetNode(let_var_list, inner_let_node)
         SetNodeStaticType(let_node, vec_static_type)
         return let_node
@@ -240,6 +261,18 @@ class _UniquifyVisitor(SchAstVisitorBase):
         SetIfElse(node, self._Visit(GetIfElse(node)))
         return node
 
+    def VisitVectorInit(self, node):
+        raise CompilingError("vector-init is unexpected in Uniquify pass.")
+
+    def VisitVectorRef(self, node):
+        SetVectorNodeVec(node, self._Visit(GetVectorNodeVec(node)))
+        return node
+
+    def VisitVectorSet(self, node):
+        SetVectorNodeVec(node, self._Visit(GetVectorNodeVec(node)))
+        SetVectorSetVal(node, self._Visit(GetVectorSetVal(node)))
+        return node
+
     def VisitInt(self, node):
         return node
 
@@ -249,6 +282,18 @@ class _UniquifyVisitor(SchAstVisitorBase):
         return node
 
     def VisitBool(self, node):
+        return node
+
+    def VisitVoid(self, node):
+        return node
+
+    def VisitInternalCollect(self, node):
+        return node
+
+    def VisitInternalAllocate(self, node):
+        return node
+
+    def VisitInternalGlobalValue(self, node):
         return node
 
 

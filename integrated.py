@@ -65,10 +65,11 @@ def main():
     sch_ast = ExposeAllocation(ast)
     PrintSourceCode('Scheme Expose-Allocation',
                     SchSourceCode(sch_ast))
-    return
 
     sch_ast = Uniquify(ast)
     PrintSourceCode('Scheme Uniquify', SchSourceCode(sch_ast))
+
+    return
 
     ir_ast = Flatten(sch_ast)
     PrintSourceCode('IR source code', IrSourceCode(ir_ast))

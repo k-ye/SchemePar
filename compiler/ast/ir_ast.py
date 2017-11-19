@@ -1,5 +1,6 @@
 from base import *
 from src_code_gen import *
+from static_types import *
 
 ''' IR specific
 '''
@@ -136,6 +137,18 @@ def SetIrReturnArg(node, arg):
     SetProperty(node, _IR_RETURN_P_ARG, arg)
 
 
+def MakeIrCollectNode(bytes):
+    assert isinstance(bytes, int)
+    node = _MakeIrStmtNode(INTERNAL_COLLECT_NODE_T)
+    SetProperty(node, COLLECT_P_BYTES, bytes)
+    SetNodeStaticType(node, StaticTypes.VOID)
+    return node
+
+
+def IsIrCollectNode(node):
+    return LangOf(node) == IR_LANG and TypeOf(node) == INTERNAL_COLLECT_NODE_T
+
+
 def MakeIrProgramNode(var_list, stmt_list):
     node = _MakeIrNode(PROGRAM_NODE_T, _NODE_TC)
     SetProperty(node, P_VAR_LIST, var_list)
@@ -175,6 +188,11 @@ def MakeIrBoolNode(b):
     return node
 
 
+def MakeIrVoidNode():
+    node = _MakeIrExprNode(VOID_NODE_T)
+    return node
+
+
 def MakeIrApplyNode(method, arg_list):
     node = _MakeIrExprNode(APPLY_NODE_T)
     SetProperties(node, {P_METHOD: method, P_ARG_LIST: arg_list})
@@ -184,6 +202,53 @@ def MakeIrApplyNode(method, arg_list):
 def IsIrApplyNode(node):
     return LangOf(node) == IR_LANG and TypeOf(node) == APPLY_NODE_T
 
+
+def MakeIrVectorRefNode(vec, idx):
+    assert isinstance(idx, int)
+    node = _MakeIrExprNode(VECTOR_REF_NODE_T)
+    SetProperty(node, VECTOR_P_VEC, vec)
+    SetProperty(node, VECTOR_P_INDEX, idx)
+    return node
+
+
+def IsIrVectorRefNode(node):
+    return LangOf(node) == IR_LANG and TypeOf(node) == VECTOR_REF_NODE_T
+
+
+def MakeIrVectorSetNode(vec, idx, val):
+    assert isinstance(idx, int)
+    node = _MakeIrExprNode(VECTOR_SET_NODE_T)
+    SetProperty(node, VECTOR_P_VEC, vec)
+    SetProperty(node, VECTOR_P_INDEX, idx)
+    SetProperty(node, VECTOR_SET_P_VAL, val)
+    return node
+
+
+def IsIrVectorSetNode(node):
+    return LangOf(node) == IR_LANG and TypeOf(node) == VECTOR_SET_NODE_T
+
+
+def MakeIrAllocateNode(len, static_type):
+    assert isinstance(len, int)
+    node = _MakeIrExprNode(INTERNAL_ALLOCATE_NODE_T)
+    SetProperty(node, ALLOCATE_P_LEN, len)
+    SetNodeStaticType(node, static_type)
+    return node
+
+
+def IsIrAllocateNode(node):
+    return LangOf(node) == IR_LANG and TypeOf(node) == INTERNAL_ALLOCATE_NODE_T
+
+
+def MakeIrGlobalValueNode(name):
+    node = _MakeIrExprNode(INTERNAL_GLOBAL_VALUE_NODE_T)
+    SetProperty(node, GLOBAL_VALUE_P_NAME, name)
+    SetNodeStaticType(node, StaticTypes.INT)
+    return node
+
+
+def IsIrGlobalValueNode(node):
+    return LangOf(node) == IR_LANG and TypeOf(node) == INTERNAL_GLOBAL_VALUE_NODE_T
 
 ''' IR Ast Node Visitor
 '''
