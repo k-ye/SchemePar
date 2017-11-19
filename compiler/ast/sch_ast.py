@@ -1,6 +1,6 @@
 from base import *
-from static_types import *
 from src_code_gen import *
+from static_types import *
 
 ''' Scheme specific
 '''
@@ -209,11 +209,15 @@ def IsSchInternalAllocateNode(node):
     return LangOf(node) == SCH_LANG and TypeOf(node) == INTERNAL_ALLOCATE_NODE_T
 
 
-def MakeSchGlobalValueNode(name):
+def MakeSchInternalGlobalValueNode(name):
     node = _MakeSchExprNode(INTERNAL_GLOBAL_VALUE_NODE_T)
     SetProperty(node, GLOBAL_VALUE_P_NAME, name)
     SetNodeStaticType(node, StaticTypes.INT)
     return node
+
+
+def IsSchInternalGlobalValueNode(node):
+    return LangOf(node) == SCH_LANG and TypeOf(node) == INTERNAL_GLOBAL_VALUE_NODE_T
 
 
 def SchRtmFns():
