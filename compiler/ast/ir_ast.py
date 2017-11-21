@@ -38,6 +38,76 @@ def _MakeIrArgNode(type):
     return _MakeIrNode(type, _ARG_TC)
 
 
+def MakeIrProgramNode(var_list, stmt_list):
+    node = _MakeIrNode(PROGRAM_NODE_T, _NODE_TC)
+    SetProperty(node, P_VAR_LIST, var_list)
+    SetProperty(node, P_STMT_LIST, stmt_list)
+    return node
+
+
+def IsIrProgramNode(node):
+    return LangOf(node) == IR_LANG and TypeOf(node) == PROGRAM_NODE_T
+
+
+def MakeIrAssignNode(var, expr):
+    assert LangOf(var) == IR_LANG and TypeOf(var) == VAR_NODE_T
+    assert LangOf(expr) == IR_LANG
+    node = _MakeIrStmtNode(IR_ASSIGN_NODE_T)
+    SetProperties(node, {NODE_P_VAR: var, _IR_ASSIGN_P_EXPR: expr})
+    return node
+
+
+def GetIrAssignExpr(node):
+    assert LangOf(node) == IR_LANG and TypeOf(node) == IR_ASSIGN_NODE_T
+    return GetProperty(node, _IR_ASSIGN_P_EXPR)
+
+
+def SetIrAssignExpr(node, expr):
+    assert LangOf(node) == IR_LANG and TypeOf(node) == IR_ASSIGN_NODE_T
+    assert LangOf(expr) == IR_LANG
+    SetProperty(node, _IR_ASSIGN_P_EXPR, expr)
+
+
+def MakeIrReturnNode(arg):
+    assert LangOf(arg) == IR_LANG and IsIrArgNode(arg)
+    node = _MakeIrStmtNode(IR_RETURN_NODE_T)
+    SetProperty(node, _IR_RETURN_P_ARG, arg)
+    return node
+
+
+def GetIrReturnArg(node):
+    assert LangOf(node) == IR_LANG and TypeOf(node) == IR_RETURN_NODE_T
+    return GetProperty(node, _IR_RETURN_P_ARG)
+
+
+def SetIrReturnArg(node, arg):
+    assert LangOf(node) == IR_LANG and TypeOf(node) == IR_RETURN_NODE_T
+    assert LangOf(arg) == IR_LANG and IsIrArgNode(arg)
+    SetProperty(node, _IR_RETURN_P_ARG, arg)
+
+
+def MakeIrCollectNode(bytes):
+    assert isinstance(bytes, int)
+    node = _MakeIrStmtNode(INTERNAL_COLLECT_NODE_T)
+    SetProperty(node, COLLECT_P_BYTES, bytes)
+    SetNodeStaticType(node, StaticTypes.VOID)
+    return node
+
+
+def IsIrCollectNode(node):
+    return LangOf(node) == IR_LANG and TypeOf(node) == INTERNAL_COLLECT_NODE_T
+
+
+def MakeIrApplyNode(method, arg_list):
+    node = _MakeIrExprNode(APPLY_NODE_T)
+    SetProperties(node, {P_METHOD: method, P_ARG_LIST: arg_list})
+    return node
+
+
+def IsIrApplyNode(node):
+    return LangOf(node) == IR_LANG and TypeOf(node) == APPLY_NODE_T
+
+
 def MakeIrCmpNode(op, lhs, rhs):
     assert IsIrArgNode(lhs) and IsIrArgNode(rhs)
     node = _MakeIrExprNode(IR_CMP_NODE_T)
@@ -100,66 +170,6 @@ def IsIrIfNode(node):
     return LangOf(node) == IR_LANG and TypeOf(node) == IF_NODE_T
 
 
-def MakeIrAssignNode(var, expr):
-    assert LangOf(var) == IR_LANG and TypeOf(var) == VAR_NODE_T
-    assert LangOf(expr) == IR_LANG
-    node = _MakeIrStmtNode(IR_ASSIGN_NODE_T)
-    SetProperties(node, {NODE_P_VAR: var, _IR_ASSIGN_P_EXPR: expr})
-    return node
-
-
-def GetIrAssignExpr(node):
-    assert LangOf(node) == IR_LANG and TypeOf(node) == IR_ASSIGN_NODE_T
-    return GetProperty(node, _IR_ASSIGN_P_EXPR)
-
-
-def SetIrAssignExpr(node, expr):
-    assert LangOf(node) == IR_LANG and TypeOf(node) == IR_ASSIGN_NODE_T
-    assert LangOf(expr) == IR_LANG
-    SetProperty(node, _IR_ASSIGN_P_EXPR, expr)
-
-
-def MakeIrReturnNode(arg):
-    assert LangOf(arg) == IR_LANG and IsIrArgNode(arg)
-    node = _MakeIrStmtNode(IR_RETURN_NODE_T)
-    SetProperty(node, _IR_RETURN_P_ARG, arg)
-    return node
-
-
-def GetIrReturnArg(node):
-    assert LangOf(node) == IR_LANG and TypeOf(node) == IR_RETURN_NODE_T
-    return GetProperty(node, _IR_RETURN_P_ARG)
-
-
-def SetIrReturnArg(node, arg):
-    assert LangOf(node) == IR_LANG and TypeOf(node) == IR_RETURN_NODE_T
-    assert LangOf(arg) == IR_LANG and IsIrArgNode(arg)
-    SetProperty(node, _IR_RETURN_P_ARG, arg)
-
-
-def MakeIrCollectNode(bytes):
-    assert isinstance(bytes, int)
-    node = _MakeIrStmtNode(INTERNAL_COLLECT_NODE_T)
-    SetProperty(node, COLLECT_P_BYTES, bytes)
-    SetNodeStaticType(node, StaticTypes.VOID)
-    return node
-
-
-def IsIrCollectNode(node):
-    return LangOf(node) == IR_LANG and TypeOf(node) == INTERNAL_COLLECT_NODE_T
-
-
-def MakeIrProgramNode(var_list, stmt_list):
-    node = _MakeIrNode(PROGRAM_NODE_T, _NODE_TC)
-    SetProperty(node, P_VAR_LIST, var_list)
-    SetProperty(node, P_STMT_LIST, stmt_list)
-    return node
-
-
-def IsIrProgramNode(node):
-    return LangOf(node) == IR_LANG and TypeOf(node) == PROGRAM_NODE_T
-
-
 def IsIrArgNode(node):
     if LangOf(node) != IR_LANG:
         return False
@@ -189,18 +199,9 @@ def MakeIrBoolNode(b):
 
 
 def MakeIrVoidNode():
-    node = _MakeIrExprNode(VOID_NODE_T)
+    # node = _MakeIrExprNode(VOID_NODE_T)
+    node = _MakeIrArgNode(VOID_NODE_T)
     return node
-
-
-def MakeIrApplyNode(method, arg_list):
-    node = _MakeIrExprNode(APPLY_NODE_T)
-    SetProperties(node, {P_METHOD: method, P_ARG_LIST: arg_list})
-    return node
-
-
-def IsIrApplyNode(node):
-    return LangOf(node) == IR_LANG and TypeOf(node) == APPLY_NODE_T
 
 
 def MakeIrVectorRefNode(vec, idx):
@@ -267,6 +268,12 @@ class IrAstVisitorBase(object):
     def _EndVisit(self, node, visit_result):
         return visit_result
 
+    def _PreVisitNode(self, node):
+        pass
+
+    def _PostVisitNode(self, node, visit_result):
+        pass
+
     def _Visit(self, node):
         try:
             assert LangOf(node) == IR_LANG
@@ -276,26 +283,40 @@ class IrAstVisitorBase(object):
 
         ndtype = TypeOf(node)
         result = None
+        self._PreVisitNode(node)
         if ndtype == PROGRAM_NODE_T:
             result = self.VisitProgram(node)
         elif ndtype == IR_ASSIGN_NODE_T:
             result = self.VisitAssign(node)
         elif ndtype == IR_RETURN_NODE_T:
             result = self.VisitReturn(node)
-        elif ndtype == IF_NODE_T:
-            result = self.VisitIf(node)
+        elif ndtype == INTERNAL_COLLECT_NODE_T:
+            result = self.VisitCollect(node)
+        elif ndtype == APPLY_NODE_T:
+            result = self.VisitApply(node)
         elif ndtype == IR_CMP_NODE_T:
             result = self.VisitCmp(node)
+        elif ndtype == IF_NODE_T:
+            result = self.VisitIf(node)
         elif ndtype == INT_NODE_T:
             result = self.VisitInt(node)
         elif ndtype == VAR_NODE_T:
             result = self.VisitVar(node)
         elif ndtype == BOOL_NODE_T:
             result = self.VisitBool(node)
-        elif ndtype == APPLY_NODE_T:
-            result = self.VisitApply(node)
+        elif ndtype == VOID_NODE_T:
+            result = self.VisitVoid(node)
+        elif ndtype == VECTOR_REF_NODE_T:
+            result = self.VisitVectorRef(node)
+        elif ndtype == VECTOR_SET_NODE_T:
+            result = self.VisitVectorSet(node)
+        elif ndtype == INTERNAL_ALLOCATE_NODE_T:
+            result = self.VisitAllocate(node)
+        elif ndtype == INTERNAL_GLOBAL_VALUE_NODE_T:
+            result = self.VisitGlobalValue(node)
         else:
-            raise RuntimeError("Unknown Scheme node type={}".format(ndtype))
+            raise RuntimeError("Unknown IR node type={}".format(ndtype))
+        self._PostVisitNode(node, result)
         return result
 
     def VisitProgram(self, node):
@@ -308,6 +329,9 @@ class IrAstVisitorBase(object):
         return node
 
     def VisitReturn(self, node):
+        return node
+
+    def VisitCollect(self, node):
         return node
 
     def VisitIf(self, node):
@@ -323,6 +347,21 @@ class IrAstVisitorBase(object):
         return node
 
     def VisitBool(self, node):
+        return node
+
+    def VisitVoid(self, node):
+        return node
+
+    def VisitVectorRef(self, node):
+        return node
+
+    def VisitVectorSet(self, node):
+        return node
+
+    def VisitAllocate(self, node):
+        return node
+
+    def VisitGlobalValue(self, node):
         return node
 
 
@@ -341,6 +380,13 @@ class _IrSourceCodeVisitor(IrAstVisitorBase):
         assert builder is self._builder
         return self._Visit(node)
 
+    def _PreVisitNode(self, node):
+        if NodeHasStaticType(node):
+            static_type = GetNodeStaticType(node)
+            self._builder.Append('# static_type: {}'.format(
+                StaticTypes.Str(static_type)))
+            self._builder.NewLine()
+
     def VisitProgram(self, node):
         var_list = GetNodeVarList(node)
         stmt_list = GetNodeStmtList(node)
@@ -349,16 +395,36 @@ class _IrSourceCodeVisitor(IrAstVisitorBase):
         return node
 
     def VisitAssign(self, node):
-        self._builder.Append('( assign')
-        self._Visit(GetNodeVar(node))
-        self._Visit(GetIrAssignExpr(node))
-        self._builder.Append(')')
+        builder = self._builder
+        builder.Append('( assign')
+        with builder.Indent():
+            builder.NewLine()
+            self._Visit(GetNodeVar(node))
+            builder.NewLine()
+            self._Visit(GetIrAssignExpr(node))
+        builder.NewLine()
+        builder.Append(')')
         return node
 
     def VisitReturn(self, node):
-        self._builder.Append('( return')
-        self._Visit(GetIrReturnArg(node))
-        self._builder.Append(')')
+        builder = self._builder
+        builder.Append('( return')
+        with builder.Indent():
+            builder.NewLine()
+            self._Visit(GetIrReturnArg(node))
+        builder.NewLine()
+        builder.Append(')')
+        return node
+
+    def VisitCollect(self, node):
+        bytes = GetInternalCollectNodeBytes(node)
+        self._builder.Append('( _collect {} )'.format(bytes))
+        return node
+
+    def VisitApply(self, node):
+        method = GetNodeMethod(node)
+        arg_list = GetNodeArgList(node)
+        GenApplySourceCode(method, arg_list, self._builder, self._FakeVisit)
         return node
 
     def VisitIf(self, node):
@@ -413,10 +479,45 @@ class _IrSourceCodeVisitor(IrAstVisitorBase):
         self._builder.Append(GetNodeBool(node))
         return node
 
-    def VisitApply(self, node):
-        method = GetNodeMethod(node)
-        arg_list = GetNodeArgList(node)
-        GenApplySourceCode(method, arg_list, self._builder, self._FakeVisit)
+    def VisitVoid(self, node):
+        self._builder.Append('( void )')
+        return node
+
+    def VisitVectorRef(self, node):
+        builder = self._builder
+        builder.Append('( vector-ref')
+        with builder.Indent():
+            builder.NewLine()
+            self._Visit(GetVectorNodeVec(node))
+            builder.NewLine()
+            builder.Append(GetVectorNodeIndex(node))
+        builder.NewLine()
+        builder.Append(')')
+        return node
+
+    def VisitVectorSet(self, node):
+        builder = self._builder
+        builder.Append('( vector-set!')
+        with builder.Indent():
+            builder.NewLine()
+            self._Visit(GetVectorNodeVec(node))
+            builder.NewLine()
+            builder.Append(GetVectorNodeIndex(node))
+            builder.NewLine()
+            self._Visit(GetVectorSetVal(node))
+        builder.NewLine()
+        builder.Append(')')
+        return node
+
+    def VisitAllocate(self, node):
+        len = GetInternalAllocateNodeLen(node)
+        static_type = StaticTypes.Str(GetNodeStaticType(node))
+        self._builder.Append('( _allocate {} {} )'.format(len, static_type))
+        return node
+
+    def VisitGlobalValue(self, node):
+        name = GetInternalGlobalValueNodeName(node)
+        self._builder.Append('( global_value "{}" )'.format(name))
         return node
 
 

@@ -28,12 +28,16 @@ def main():
         (
             [foo 1] [bar 2] [x 3] [y 4]
         )
-        (let
-            (
-                [foo (vector foo bar x y)]
-                [bar 40]
+        (if
+            (< (- foo) x)
+            (let
+                (
+                    [foo (vector foo bar x y)]
+                    [bar 40]
+                )
+                (+ (vector-ref foo 2) bar )
             )
-            (+ (vector-ref foo 2) bar )
+            233
         )
     )
     ; 42
@@ -69,10 +73,10 @@ def main():
     sch_ast = Uniquify(ast)
     PrintSourceCode('Scheme Uniquify', SchSourceCode(sch_ast))
 
-    return
-
     ir_ast = Flatten(sch_ast)
     PrintSourceCode('IR source code', IrSourceCode(ir_ast))
+
+    return
 
     x86_formatter = X86InternalFormatter()
     x86_ast = SelectInstruction(ir_ast)

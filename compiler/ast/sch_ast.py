@@ -401,7 +401,7 @@ class _SchSourceCodeVisitor(SchAstVisitorBase):
         return self._builder.Build()
 
     def _PreVisitNode(self, node):
-        if HasProperty(node, P_STATIC_TYPE):
+        if NodeHasStaticType(node):
             static_type = GetNodeStaticType(node)
             self._builder.Append('; static_type: {}'.format(
                 StaticTypes.Str(static_type)))

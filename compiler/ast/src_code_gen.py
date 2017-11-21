@@ -93,8 +93,11 @@ class DefaultProgramFormatter(object):
 
 def GenVarDefsSourceCode(var_list, builder, src_code_gen, formatter):
     formatter.BeginVarDefs(builder)
-    for var in var_list:
-        formatter.AddVar(var, builder, src_code_gen)
+    with builder.Indent():
+        for var in var_list:
+            builder.NewLine()
+            formatter.AddVar(var, builder, src_code_gen)
+    builder.NewLine()
     formatter.EndVarDefs(builder)
 
 

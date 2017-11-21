@@ -425,20 +425,34 @@ class _FlattenVisitor(SchAstVisitorBase):
         ir_expr, stmt_list = self._Visit(GetSchProgram(node))
         assert IsIrArgNode(ir_expr)
         stmt_list.append(MakeIrReturnNode(ir_expr))
-        return MakeIrProgramNode(self._builder.var_list, stmt_list), stmt_list
+        ir_node = MakeIrProgramNode(self._builder.var_list, stmt_list)
+        SetNodeStaticType(ir_node, GetNodeStaticType(ir_expr))
+        return ir_node, stmt_list
 
     def _VisitBinLogicalOp(self, node):
         method = GetNodeMethod(node)
         lhs, rhs = GetSchApplyExprList(node)
+        assert NodeHasStaticType(lhs) and NodeHasStaticType(rhs)
         translated = None
+
+        def MakeSchBoolWithStaticType(b):
+            node = MakeSchBoolNode(b)
+            SetNodeStaticType(node, StaticTypes.BOOL)
+            return node
+
         if method == 'and':
-            inner = MakeSchIfNode(rhs, MakeSchBoolNode(
-                '#t'), MakeSchBoolNode('#f'))
-            translated = MakeSchIfNode(lhs, inner, MakeSchBoolNode('#f'))
+            inner = MakeSchIfNode(rhs, MakeSchBoolWithStaticType(
+                '#t'), MakeSchBoolWithStaticType('#f'))
+            SetNodeStaticType(inner, StaticTypes.BOOL)
+            translated = MakeSchIfNode(
+                lhs, inner, MakeSchBoolWithStaticType('#f'))
         elif method == 'or':
-            inner = MakeSchIfNode(rhs, MakeSchBoolNode(
-                '#t'), MakeSchBoolNode('#f'))
-            translated = MakeSchIfNode(lhs, MakeSchBoolNode('#t'), inner)
+            inner = MakeSchIfNode(rhs, MakeSchBoolWithStaticType(
+                '#t'), MakeSchBoolWithStaticType('#f'))
+            SetNodeStaticType(inner, StaticTypes.BOOL)
+            translated = MakeSchIfNode(
+                lhs, MakeSchBoolWithStaticType('#t'), inner)
+        SetNodeStaticType(translated, StaticTypes.BOOL)
         return self._Visit(translated)
 
     def VisitApply(self, node):
@@ -450,6 +464,7 @@ class _FlattenVisitor(SchAstVisitorBase):
         for expr in GetSchApplyExprList(node):
             ir_expr, expr_stmt_list = self._Visit(expr)
             assert IsIrArgNode(ir_expr)
+            assert NodeHasStaticType(ir_expr)
             stmt_list += expr_stmt_list
             ir_arg_list.append(ir_expr)
         ir_apply = None
@@ -458,8 +473,13 @@ class _FlattenVisitor(SchAstVisitorBase):
             ir_apply = MakeIrCmpNode(method, *ir_arg_list)
         else:
             ir_apply = MakeIrApplyNode(method, ir_arg_list)
+        static_type = GetNodeStaticType(node)
+        SetNodeStaticType(ir_apply, static_type)
+
         tmp_var = self._builder.AllocateTmpVar()
+        SetNodeStaticType(tmp_var, static_type)
         stmt_list.append(MakeIrAssignNode(tmp_var, ir_apply))
+
         return tmp_var, stmt_list
 
     def VisitLet(self, node):
@@ -467,15 +487,19 @@ class _FlattenVisitor(SchAstVisitorBase):
         stmt_list = []
         for var, var_init in GetNodeVarList(node):
             ir_init, init_stmt_list = self._Visit(var_init)
-            assert IsIrArgNode(ir_init)
+            assert IsIrArgNode(ir_init), ir_init
+            assert GetNodeStaticType(ir_init) == GetNodeStaticType(var)
             # Cannot add assign stmt yet, cache it in |ir_var_init|
-            ir_var_init.append((GetNodeVar(var), ir_init))
+            ir_var_init.append(
+                (GetNodeVar(var), GetNodeStaticType(var), ir_init))
             stmt_list += init_stmt_list
-        for var_name, ir_init in ir_var_init:
+        for var_name, var_static_type, ir_init in ir_var_init:
             ir_var = self._builder.AddVar(var_name)
+            SetNodeStaticType(ir_var, var_static_type)
             stmt_list.append(MakeIrAssignNode(ir_var, ir_init))
         ir_body, body_stmt_list = self._Visit(GetSchLetBody(node))
         assert IsIrArgNode(ir_body)
+        assert GetNodeStaticType(ir_body) == GetNodeStaticType(node)
         stmt_list += body_stmt_list
         return ir_body, stmt_list
 
@@ -489,28 +513,131 @@ class _FlattenVisitor(SchAstVisitorBase):
         # stmt_list.append(MakeIrAssignNode(
         #     if_cond_tmp, MakeIrCmpNode('eq?', MakeIrBoolNode('#t'), ir_cond)))
         ir_cond = MakeIrCmpNode('eq?', MakeIrBoolNode('#t'), ir_cond)
+        SetNodeStaticType(ir_cond, StaticTypes.BOOL)
         # then branch
         if_var = self._builder.AllocateTmpVar()
+        if_static_type = GetNodeStaticType(node)
+        SetNodeStaticType(if_var, if_static_type)
         ir_then, then_stmt_list = self._Visit(GetIfThen(node))
+        assert GetNodeStaticType(ir_then) == if_static_type
         then_stmt_list.append(MakeIrAssignNode(if_var, ir_then))
         then_stmt_list = tuple(then_stmt_list)
         # else branch
         ir_else, else_stmt_list = self._Visit(GetIfElse(node))
+        assert GetNodeStaticType(ir_else) == if_static_type
         else_stmt_list.append(MakeIrAssignNode(if_var, ir_else))
         else_stmt_list = tuple(else_stmt_list)
 
         ir_if = MakeIrIfNode(ir_cond, then_stmt_list, else_stmt_list)
+        SetNodeStaticType(ir_if, if_static_type)
         stmt_list.append(ir_if)
         return if_var, stmt_list
 
+    def VisitVectorInit(self, node):
+        raise CompilingError("vector-init is unexpected in Flatten pass.")
+
+    def VisitVectorRef(self, node):
+        stmt_list = []
+
+        sch_vec = GetVectorNodeVec(node)
+        ir_vec, tmp_stmt = self._Visit(sch_vec)
+        vec_static_type = GetNodeStaticType(sch_vec)
+        # assert GetNodeStaticType(ir_vec) == vec_static_type
+        stmt_list += tmp_stmt
+
+        idx = GetVectorNodeIndex(node)
+        static_type = GetVectorStaticTypeAt(vec_static_type, idx)
+        assert static_type == GetNodeStaticType(node)
+
+        ir_vec_ref = MakeIrVectorRefNode(ir_vec, idx)
+        SetNodeStaticType(ir_vec_ref, static_type)
+        tmp_var = self._builder.AllocateTmpVar()
+        SetNodeStaticType(tmp_var, StaticTypes.VOID)
+        stmt_list.append(MakeIrAssignNode(tmp_var, ir_vec_ref))
+
+        return tmp_var, []
+
+    def VisitVectorSet(self, node):
+        stmt_list = []
+
+        ir_vec, tmp_stmt_list = self._Visit(GetVectorNodeVec(node))
+        stmt_list += tmp_stmt_list
+
+        idx = GetVectorNodeIndex(node)
+
+        ir_val, tmp_stmt_list = self._Visit(GetVectorSetVal(node))
+        stmt_list += tmp_stmt_list
+
+        ir_vec_set = MakeIrVectorSetNode(ir_vec, idx, ir_val)
+        SetNodeStaticType(ir_vec_set, StaticTypes.VOID)
+        tmp_var = self._builder.AllocateTmpVar()
+        SetNodeStaticType(tmp_var, StaticTypes.VOID)
+        stmt_list.append(MakeIrAssignNode(tmp_var, ir_vec_set))
+
+        return tmp_var, stmt_list
+
     def VisitInt(self, node):
-        return MakeIrIntNode(GetIntX(node)), []
+        ir_node = MakeIrIntNode(GetIntX(node))
+        SetNodeStaticType(ir_node, StaticTypes.INT)
+        return ir_node, []
 
     def VisitVar(self, node):
-        return self._builder.GetVar(GetNodeVar(node)), []
+        ir_node = self._builder.GetVar(GetNodeVar(node))
+        static_type = GetNodeStaticType(node)
+        if NodeHasStaticType(ir_node):
+            assert GetNodeStaticType(ir_node) == static_type
+        else:
+            SetNodeStaticType(ir_node, static_type)
+        return ir_node, []
 
     def VisitBool(self, node):
-        return MakeIrBoolNode(GetNodeBool(node)), []
+        ir_node = MakeIrBoolNode(GetNodeBool(node))
+        SetNodeStaticType(ir_node, StaticTypes.BOOL)
+        return ir_node, []
+
+    def VisitVoid(self, node):
+        ir_void = MakeIrVoidNode()
+        SetNodeStaticType(ir_void, StaticTypes.VOID)
+        return ir_void, []
+        # tmp_var = self._builder.AllocateTmpVar()
+        # SetNodeStaticType(tmp_var, StaticTypes.VOID)
+        # stmt_list = [MakeIrAssignNode(tmp_var, ir_void)]
+        # return tmp_var, stmt_list
+
+    def VisitInternalCollect(self, node):
+        # `collect` is a statement in IR
+        ir_collect = MakeIrCollectNode(GetInternalCollectNodeBytes(node))
+        stmt_list = [ir_collect]
+
+        ir_void = MakeIrVoidNode()
+        SetNodeStaticType(ir_void, StaticTypes.VOID)
+        return ir_void, stmt_list
+        # tmp_var = self._builder.AllocateTmpVar()
+        # SetNodeStaticType(tmp_var, StaticTypes.VOID)
+        # stmt_list.append(MakeIrAssignNode(tmp_var, ir_void))
+
+        # return tmp_var, stmt_list
+
+    def VisitInternalAllocate(self, node):
+        len, static_type = GetInternalAllocateNodeLen(
+            node), GetNodeStaticType(node)
+        ir_allocate = MakeIrAllocateNode(len, static_type)
+
+        tmp_var = self._builder.AllocateTmpVar()
+        SetNodeStaticType(tmp_var, static_type)
+        stmt_list = [MakeIrAssignNode(tmp_var, ir_allocate)]
+
+        return tmp_var, stmt_list
+
+    def VisitInternalGlobalValue(self, node):
+        ir_global_val = MakeIrGlobalValueNode(
+            GetInternalGlobalValueNodeName(node))
+
+        tmp_var = self._builder.AllocateTmpVar()
+        SetNodeStaticType(tmp_var, StaticTypes.INT)
+        stmt_list = [MakeIrAssignNode(tmp_var, ir_global_val)]
+
+        return tmp_var, stmt_list
 
 
 def Flatten(sch_ast):
