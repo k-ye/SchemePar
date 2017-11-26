@@ -83,3 +83,6 @@ def Reg64BitToLow8Bit(reg):
         R15: 'r15b',
     }
     return reg_map[reg]
+
+BYTE_SIZE = 1
+DWORD_SIZE = 8

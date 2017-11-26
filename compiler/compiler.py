@@ -53,7 +53,7 @@ class _ExposeAllocationVisitor(SchAstVisitorBase):
         return node
 
     def _FindUniqueVarNamePrefix(self, arg_list):
-        max_varlen = 3  # the minimu length of the prefix is 3
+        max_varlen = 3  # the minimum length of the prefix is 3
         for arg in arg_list:
             if IsSchVarNode(arg):
                 max_varlen = max(max_varlen, len(GetNodeVar(arg)))
@@ -79,7 +79,7 @@ class _ExposeAllocationVisitor(SchAstVisitorBase):
         #       (void)
         #       (collect bytes)
         #   )
-        # skipped _Visit for this internally created Sch nodes
+        # skipped _Visit for such internally created Sch nodes
         vec_len = GetSchVectorInitNodeLen(node)
         vec_bytes = GetSchVectorInitNodeBytes(node)
         vec_static_type = GetNodeStaticType(node)
@@ -575,6 +575,7 @@ class _FlattenVisitor(SchAstVisitorBase):
         static_type = GetVectorStaticTypeAt(vec_static_type, idx)
 
         ir_val, tmp_stmt_list = self._Visit(GetVectorSetVal(node))
+        assert IsIrArgNode(ir_val)
         assert GetNodeStaticType(ir_val) == static_type
         stmt_list += tmp_stmt_list
 
@@ -733,15 +734,23 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
             instr_list = self.VisitCmp(ir_expr)
             cmp_op = GetIrCmpOp(ir_expr)
             byte_reg = MakeX86ByteRegNode(x86c.RAX)
-            # needs special handling for cmp statement
+            # needs special handling for cmp expression
             x86_set = MakeX86InstrNode(
                 EncodeCcIntoInstr(x86c.SET, x86c.CmpOpToCc(cmp_op)), byte_reg)
             instr_list.append(x86_set)
             instr_list.append(MakeX86InstrNode(
                 x86c.MOVEZB, byte_reg, x86_asn_var))
+        elif IsIrVectorRefNode(ir_expr):
+            instr_list = self._SelectForVectorRef(ir_expr, x86_asn_var)
+        elif IsIrVectorSetNode(ir_expr):
+            instr_list = self._SelectForVectorSet(ir_expr, x86_asn_var)
+        elif IsIrAllocateNode(ir_expr):
+            instr_list = self._SelectForAllocate(ir_expr, x86_asn_var)
+        elif IsIrGlobalValueNode(ir_expr):
+            instr_list = self._SelctForGlobalValue(ir_expr, x86_asn_var)
         else:
             raise RuntimeError(
-                'Unknown type={} in IrAssignNode'.format(expr_type))
+                'Unknown type={} in IrAssignNode, node={}'.format(TypeOf(ir_expr), node))
         return instr_list
 
     def VisitReturn(self, node):
@@ -753,6 +762,26 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
         # self._builder.AddInstr(x86_instr)
         # let the calling convention epilogue handles the actual 'ret'
         # instruction
+
+    def VisitCollect(self, node):
+        instr_list = []
+        x86_rdi = MakeX86RegNode(x86c.RDI)
+        x86_rsi = MakeX86RegNode(x86c.RSI)
+
+        instr_list.append(MakeX86InstrNode(x86c.PUSH, x86_rdi))
+        instr_list.append(MakeX86InstrNode(x86c.PUSH, x86_rsi))
+
+        instr_list.append(MakeX86InstrNode(
+            x86c.MOVE, MakeX86RegNode(x86c.R15), deepcopy(x86_rdi)))
+        instr_list.append(MakeX86InstrNode(x86c.MOVE, MakeX86IntNode(
+            GetInternalCollectNodeBytes(node)), deepcopy(x86_rsi)))
+        instr_list.append(MakeX86InstrNode(
+            x86c.CALL, MakeX86LabelRefNode('collect')))
+
+        instr_list.append(MakeX86InstrNode(x86c.POP, deepcopy(x86_rsi)))
+        instr_list.append(MakeX86InstrNode(x86c.POP, deepcopy(x86_rdi)))
+
+        return instr_list
 
     def VisitApply(self, node):
         raise RuntimeError("Shouldn't get called")
@@ -822,18 +851,6 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
     def VisitBool(self, node):
         raise RuntimeError("Shouldn't get called")
 
-    def _MakeX86ArgNode(self, node):
-        assert IsIrArgNode(node)
-        ndtype = TypeOf(node)
-        if ndtype == INT_NODE_T:
-            return MakeX86IntNode(GetIntX(node))
-        elif ndtype == BOOL_NODE_T:
-            bool_to_int = 1 if GetNodeBool(node) == '#t' else 0
-            return MakeX86IntNode(bool_to_int)
-        elif ndtype == VAR_NODE_T:
-            return self._builder.GetVar(GetNodeVar(node))
-        raise RuntimeError('type={}'.format(ndtype))
-
     def _SelectForArg(self, node, x86_asn_var):
         assert LangOf(x86_asn_var) == X86_LANG
         assert TypeOf(x86_asn_var) == VAR_NODE_T
@@ -844,6 +861,93 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
 
         x86_arg = self._MakeX86ArgNode(node)
         return [MakeX86InstrNode(x86c.MOVE, x86_arg, x86_asn_var)]
+
+    def _MakeX86ArgNode(self, node):
+        assert IsIrArgNode(node)
+        ndtype = TypeOf(node)
+        if ndtype == INT_NODE_T:
+            return MakeX86IntNode(GetIntX(node))
+        elif ndtype == BOOL_NODE_T:
+            bool_to_int = 1 if GetNodeBool(node) == '#t' else 0
+            return MakeX86IntNode(bool_to_int)
+        elif ndtype == VAR_NODE_T:
+            return self._builder.GetVar(GetNodeVar(node))
+        elif ndtype == VOID_NODE_T:
+            return MakeX86IntNode(0)
+        raise RuntimeError('type={}'.format(ndtype))
+
+    def VisitVectorRef(self, node):
+        raise RuntimeError("Shouldn't get called")
+
+    def _SelectForVectorRef(self, node, x86_asn_var):
+        instr_list = []
+        ir_vec = GetVectorNodeVec(node)
+        assert IsIrVarNode(ir_vec)
+        x86_vec = self._MakeX86ArgNode(ir_vec)
+        instr_list.append(MakeX86InstrNode(
+            x86c.MOVE, x86_vec, MakeX86RegNode(x86c.R11)))
+
+        idx = GetVectorNodeIndex(node)
+        offset = 8 * (idx + 1)
+        instr_list.append(MakeX86InstrNode(
+            x86c.MOVE, MakeX86DerefNode(x86c.R11, offset), x86_asn_var))
+
+        return instr_list
+
+    def VisitVectorSet(self, node):
+        raise RuntimeError("Shouldn't get called")
+
+    def _SelectForVectorSet(self, node, x86_asn_var):
+        instr_list = []
+
+        ir_vec = GetVectorNodeVec(node)
+        assert IsIrVarNode(ir_vec)
+        x86_vec = self._MakeX86ArgNode(ir_vec)
+        instr_list.append(MakeX86InstrNode(
+            x86c.MOVE, x86_vec, MakeX86RegNode(x86c.R11)))
+
+        ir_val = GetVectorSetVal(node)
+        assert IsIrArgNode(ir_val)
+        x86_val = self._MakeX86ArgNode(ir_val)
+
+        idx = GetVectorNodeIndex(node)
+        offset = 8 * (idx + 1)
+        instr_list.append(MakeX86InstrNode(x86c.MOVE, x86_val,
+                                           MakeX86DerefNode(x86c.R11, offset)))
+        instr_list.append(MakeX86InstrNode(
+            x86c.MOVE, MakeX86IntNode(0), x86_asn_var))
+
+        return instr_list
+
+    def VisitAllocate(self, node):
+        raise RuntimeError("Shouldn't get called")
+
+    def _SelectForAllocate(self, node, x86_asn_var):
+        x86_free_ptr = MakeX86GlobalValueNode('free_ptr')
+        instr_list = [MakeX86InstrNode(
+            x86c.MOVE, deepcopy(x86_free_ptr), x86_asn_var)]
+
+        len = GetInternalAllocateNodeLen(node)
+        instr_list.append(MakeX86InstrNode(x86c.ADD, MakeX86IntNode(
+            x86c.DWORD_SIZE * (len + 1)), deepcopy(x86_free_ptr)))
+
+        instr_list.append(MakeX86InstrNode(
+            x86c.MOVE, deepcopy(x86_asn_var), MakeX86RegNode(x86c.R11)))
+
+        vec_tag = ComputeVectorTag(GetNodeStaticType(node))
+        instr_list.append(MakeX86InstrNode(
+            x86c.MOVE, MakeX86IntNode(vec_tag), MakeX86DerefNode(x86c.R11, 0)))
+
+        return instr_list
+
+    def VisitGlobalValue(self, node):
+        raise RuntimeError("Shouldn't get called")
+
+    def _SelctForGlobalValue(self, node, x86_asn_var):
+        x86_global_val = MakeX86GlobalValueNode(
+            GetInternalGlobalValueNodeName(node))
+        instr_list = [MakeX86InstrNode(x86c.MOVE, x86_global_val, x86_asn_var)]
+        return instr_list
 
 
 def SelectInstruction(ir_ast, formatter=None):
@@ -1072,7 +1176,7 @@ def _AllocateRegisterOrStack(ig, mrg, use_mr):
     var_assigned_loc = {}
 
     free_regs = {r for r in x86c.FreeRegs()}
-    stack_pos, dword_sz = 0, 8
+    stack_pos = 0
 
     def TopUnassignedVar():
         curmax, chosen = -1, None
@@ -1106,7 +1210,7 @@ def _AllocateRegisterOrStack(ig, mrg, use_mr):
                 loc = MakeX86RegNode(reg_name)
             else:
                 # select a stack position
-                stack_pos -= dword_sz
+                stack_pos -= x86c.DWORD_SIZE
                 loc = MakeX86DerefNode(x86c.RBP, stack_pos)
         var_assigned_loc[uv] = loc
         for iv in interfered:

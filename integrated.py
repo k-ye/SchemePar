@@ -76,12 +76,12 @@ def main():
     ir_ast = Flatten(sch_ast)
     PrintSourceCode('IR source code', IrSourceCode(ir_ast))
 
-    return
-
     x86_formatter = X86InternalFormatter()
     x86_ast = SelectInstruction(ir_ast)
     PrintSourceCode('X86 (Select Instruction)',
                     X86SourceCode(x86_ast, x86_formatter))
+
+    return
 
     x86_ast = UncoverLive(x86_ast)
     x86_formatter.include_live_afters = True

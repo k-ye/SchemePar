@@ -57,7 +57,7 @@ const int64_t TUPLE_FWD_ADDR_MASK = 0xfffffffffffffff8;
 //
 //
 // Bit 63 .. 7: Bit (7 + k) corresponds to the k-th element in the tuple, where
-//      0 <= k < 50 (the max tuple length is 50). Each bit indicates whether
+//      0 <= k <= 50 (the max tuple length is 50). Each bit indicates whether
 //      the element is a tuple pointer (1) or a basic int/bool (0). During GC,
 //      we can ignore the int/bools after copying the tuple, but need to
 //      recursively handle the tuple pointers.

@@ -1,5 +1,6 @@
 from base import *
 from src_code_gen import *
+from static_types import *
 
 
 ''' X86 specific
@@ -207,6 +208,17 @@ def IsX86VarNode(node):
     return IsX86Node(node) and TypeOf(node) == VAR_NODE_T
 
 
+def MakeX86GlobalValueNode(name):
+    node = _MakeX86ArgNode(INTERNAL_GLOBAL_VALUE_NODE_T)
+    SetProperty(node, GLOBAL_VALUE_P_NAME, name)
+    SetNodeStaticType(node, StaticTypes.INT)
+    return node
+
+
+def IsX86GlobalValueNode(node):
+    return IsX86Node(node) and TypeOf(node) == INTERNAL_GLOBAL_VALUE_NODE_T
+
+
 def MakeX86LabelDefNode(label):
     node = _MakeX86Node(X86_LABEL_DEF_NODE_T, _NODE_TC)
     SetProperty(node, _X86_LABEL_P_LABEL, label)
@@ -385,12 +397,19 @@ class X86AstVisitorBase(object):
     def _EndVisit(self, node, visit_result):
         return visit_result
 
+    def _PreVisitNode(self, node):
+        pass
+
+    def _PostVisitNode(self, node, visit_result):
+        pass
+
     def _Visit(self, node):
         assert LangOf(node) == X86_LANG, \
             'lang={}, type={}, node={}'.format(
                 LangOf(node), TypeOf(node), str(node))
         ndtype = TypeOf(node)
         result = None
+        self._PreVisitNode(node)
         if ndtype == PROGRAM_NODE_T:
             result = self.VisitProgram(node)
         elif ndtype == X86_INSTR_NODE_T:
@@ -405,6 +424,8 @@ class X86AstVisitorBase(object):
             result = self.VisitByteReg(node)
         elif ndtype == X86_DEREF_NODE_T:
             result = self.VisitDeref(node)
+        elif ndtype == INTERNAL_GLOBAL_VALUE_NODE_T:
+            result = self.VisitGlobalValue(node)
         elif ndtype == X86_LABEL_REF_NODE_T:
             result = self.VisitLabelRef(node)
         elif ndtype == X86_LABEL_DEF_NODE_T:
@@ -417,6 +438,7 @@ class X86AstVisitorBase(object):
             result = self.VisitTmpIf(node)
         else:
             raise RuntimeError("Unknown X86 node type={}".format(ndtype))
+        self._PostVisitNode(node, result)
         return result
 
     def VisitProgram(self, node):
@@ -438,6 +460,9 @@ class X86AstVisitorBase(object):
         return node
 
     def VisitDeref(self, node):
+        return node
+
+    def VisitGlobalValue(self, node):
         return node
 
     def VisitLabelRef(self, node):
@@ -508,6 +533,9 @@ class _X86SourceCodeVisitor(X86AstVisitorBase):
         val = (GetX86Reg(node), GetX86DerefOffset(node))
         self._VisitArg(node, val)
 
+    def VisitGlobalValue(self, node):
+        self._VisitArg(node, GetInternalGlobalValueNodeName(node))
+
     def VisitLabelRef(self, node):
         self._VisitArg(node, GetX86Label(node))
 
@@ -532,12 +560,14 @@ class _X86SourceCodeVisitor(X86AstVisitorBase):
         with builder.Indent():
             builder.NewLine()
             builder.Append('# then')
+            builder.NewLine()
             then_instr_list = GetX86TmpIfThen(node)
             self._formatter.FormatInstrList(
                 then_instr_list, GetX86TmpIfThenLiveAfter(node), builder, self._FakeVisit)
 
             builder.NewLine()
             builder.Append('# else')
+            builder.NewLine()
             else_instr_list = GetX86TmpIfElse(node)
             self._formatter.FormatInstrList(
                 else_instr_list, GetX86TmpIfElseLiveAfter(node), builder, self._FakeVisit)
@@ -559,11 +589,13 @@ class X86InternalFormatter(object):
     def __init__(self, include_live_afters=False):
         self.include_live_afters = include_live_afters
 
-    def AddArg(self, t, var, builder):
+    def AddArg(self, t, arg, builder):
         if t == X86_DEREF_NODE_T:
-            builder.Append('( {} {} {} )'.format(t, var[0], var[1]))
+            builder.Append('( {} {} {} )'.format(t, arg[0], arg[1]))
+        elif t == INTERNAL_GLOBAL_VALUE_NODE_T:
+            builder.Append('( global_value "{}" )'.format(arg))
         else:
-            builder.Append('( {} {} )'.format(t, var))
+            builder.Append('( {} {} )'.format(t, arg))
 
     def AddLabelDef(self, label, builder):
         builder.Append('label {}:'.format(label))
@@ -588,16 +620,22 @@ class X86InternalFormatter(object):
         self.FormatInstrList(instr_list, live_afters, builder, src_code_gen)
 
     def FormatInstrList(self, instr_list, live_afters, builder, src_code_gen):
-        len_live_afters = 0
-        if live_afters is not None:
-            len_live_afters = len(live_afters)
-        for i, instr in enumerate(instr_list):
-            builder.NewLine()
-            src_code_gen(instr, builder)
-            if live_afters is not None and self.include_live_afters and i < len_live_afters:
-                la = live_afters[i]
-                la_str = ', '.join(la)
-                builder.Append('( { %s } )' % la_str)
+        builder.Append('(')
+
+        with builder.Indent():
+            len_live_afters = 0
+            if live_afters is not None:
+                len_live_afters = len(live_afters)
+
+            for i, instr in enumerate(instr_list):
+                builder.NewLine()
+                src_code_gen(instr, builder)
+                if live_afters is not None and self.include_live_afters and i < len_live_afters:
+                    la = live_afters[i]
+                    la_str = ', '.join(la)
+                    builder.Append('( { %s } )' % la_str)
+        builder.NewLine()
+        builder.Append(')')
 
 
 class MacX86Formatter(object):

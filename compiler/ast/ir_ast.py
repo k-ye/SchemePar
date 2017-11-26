@@ -192,6 +192,10 @@ def MakeIrVarNode(var):
     return node
 
 
+def IsIrVarNode(node):
+    return LangOf(node) == IR_LANG and TypeOf(node) == VAR_NODE_T
+
+
 def MakeIrBoolNode(b):
     node = _MakeIrArgNode(BOOL_NODE_T)
     SetProperty(node, NODE_P_BOOL, b)

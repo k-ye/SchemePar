@@ -57,6 +57,32 @@ def GetVectorStaticTypeAt(static_type, i):
     assert IsValidStaticTypeVector(static_type), static_type
     return static_type[1][i]
 
+
+def GetVectorStaticTypeList(static_type):
+    assert IsValidStaticTypeVector(static_type), static_type
+    return static_type[1]
+
+
+def ComputeVectorTag(static_type):
+    # copied flag, not copied yet
+    tag = 1
+
+    # length segment
+    st_list = GetVectorStaticTypeList(static_type)
+    st_len = len(st_list)
+    assert st_len <= 50
+    tag |= (st_len << 1)
+
+    # tuple pointer segment
+    tuple_pointer_tag = 0
+    for i in xrange(st_len):
+        if IsValidStaticTypeVector(st_list[i]):
+            tuple_pointer_tag |= (1 << i)
+    tag |= (tuple_pointer_tag << 7)
+
+    return tag
+
+
 P_STATIC_TYPE = 'static_type'
 
 
