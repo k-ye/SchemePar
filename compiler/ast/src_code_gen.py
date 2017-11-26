@@ -121,6 +121,9 @@ def GenProgramSourceCode(var_list, stmt_list, builder, src_code_gen, formatter=N
 def GenApplySourceCode(method, operand_list, builder, src_code_gen):
     builder.Append('(')
     builder.Append(method)
-    for operand in operand_list:
-        src_code_gen(operand, builder)
+    with builder.Indent():
+        for operand in operand_list:
+            builder.NewLine()
+            src_code_gen(operand, builder)
+    builder.NewLine()
     builder.Append(')')

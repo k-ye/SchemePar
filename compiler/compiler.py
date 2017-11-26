@@ -512,7 +512,13 @@ class _FlattenVisitor(SchAstVisitorBase):
         # if_cond_tmp = self._builder.AllocateTmpVar()
         # stmt_list.append(MakeIrAssignNode(
         #     if_cond_tmp, MakeIrCmpNode('eq?', MakeIrBoolNode('#t'), ir_cond)))
-        ir_cond = MakeIrCmpNode('eq?', MakeIrBoolNode('#t'), ir_cond)
+
+        def MakeIrBoolWithStatitType(b):
+            result = MakeIrBoolNode(b)
+            SetNodeStaticType(result, StaticTypes.BOOL)
+            return result
+
+        ir_cond = MakeIrCmpNode('eq?', MakeIrBoolWithStatitType('#t'), ir_cond)
         SetNodeStaticType(ir_cond, StaticTypes.BOOL)
         # then branch
         if_var = self._builder.AllocateTmpVar()
@@ -540,10 +546,10 @@ class _FlattenVisitor(SchAstVisitorBase):
         stmt_list = []
 
         sch_vec = GetVectorNodeVec(node)
-        ir_vec, tmp_stmt = self._Visit(sch_vec)
+        ir_vec, tmp_stmt_list = self._Visit(sch_vec)
         vec_static_type = GetNodeStaticType(sch_vec)
         # assert GetNodeStaticType(ir_vec) == vec_static_type
-        stmt_list += tmp_stmt
+        stmt_list += tmp_stmt_list
 
         idx = GetVectorNodeIndex(node)
         static_type = GetVectorStaticTypeAt(vec_static_type, idx)
@@ -552,20 +558,24 @@ class _FlattenVisitor(SchAstVisitorBase):
         ir_vec_ref = MakeIrVectorRefNode(ir_vec, idx)
         SetNodeStaticType(ir_vec_ref, static_type)
         tmp_var = self._builder.AllocateTmpVar()
-        SetNodeStaticType(tmp_var, StaticTypes.VOID)
+        SetNodeStaticType(tmp_var, static_type)
         stmt_list.append(MakeIrAssignNode(tmp_var, ir_vec_ref))
 
-        return tmp_var, []
+        return tmp_var, stmt_list
 
     def VisitVectorSet(self, node):
         stmt_list = []
 
-        ir_vec, tmp_stmt_list = self._Visit(GetVectorNodeVec(node))
+        sch_vec = GetVectorNodeVec(node)
+        ir_vec, tmp_stmt_list = self._Visit(sch_vec)
+        vec_static_type = GetNodeStaticType(sch_vec)
         stmt_list += tmp_stmt_list
 
         idx = GetVectorNodeIndex(node)
+        static_type = GetVectorStaticTypeAt(vec_static_type, idx)
 
         ir_val, tmp_stmt_list = self._Visit(GetVectorSetVal(node))
+        assert GetNodeStaticType(ir_val) == static_type
         stmt_list += tmp_stmt_list
 
         ir_vec_set = MakeIrVectorSetNode(ir_vec, idx, ir_val)

@@ -383,7 +383,7 @@ class _IrSourceCodeVisitor(IrAstVisitorBase):
     def _PreVisitNode(self, node):
         if NodeHasStaticType(node):
             static_type = GetNodeStaticType(node)
-            self._builder.Append('# static_type: {}'.format(
+            self._builder.Append('/* static_type: {} */'.format(
                 StaticTypes.Str(static_type)))
             self._builder.NewLine()
 
@@ -436,7 +436,7 @@ class _IrSourceCodeVisitor(IrAstVisitorBase):
             self._Visit(GetIfCond(node))
             # then branch
             builder.NewLine()
-            builder.Append('# then')
+            builder.Append('/* then */')
             builder.NewLine()
             builder.Append('(')
             with builder.Indent():
@@ -447,7 +447,7 @@ class _IrSourceCodeVisitor(IrAstVisitorBase):
             builder.Append(')')
             # else branch
             builder.NewLine()
-            builder.Append('# else')
+            builder.Append('/* else */')
             builder.NewLine()
             builder.Append('(')
             with builder.Indent():
@@ -461,10 +461,15 @@ class _IrSourceCodeVisitor(IrAstVisitorBase):
         return node
 
     def VisitCmp(self, node):
-        self._builder.Append('( {}'.format(GetIrCmpOp(node)))
-        self._Visit(GetIrCmpLhs(node))
-        self._Visit(GetIrCmpRhs(node))
-        self._builder.Append(')')
+        builder = self._builder
+        builder.Append('( {}'.format(GetIrCmpOp(node)))
+        with builder.Indent():
+            builder.NewLine()
+            self._Visit(GetIrCmpLhs(node))
+            builder.NewLine()
+            self._Visit(GetIrCmpRhs(node))
+        builder.NewLine()
+        builder.Append(')')
         return node
 
     def VisitInt(self, node):
