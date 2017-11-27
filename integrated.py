@@ -86,12 +86,12 @@ def main():
     PrintSourceCode('X86 (Select Instruction)',
                     X86SourceCode(x86_ast, x86_formatter))
 
-    return
-
     x86_ast = UncoverLive(x86_ast)
     x86_formatter.include_live_afters = True
     PrintSourceCode('X86 (Uncover Live)',
                     X86SourceCode(x86_ast, x86_formatter))
+
+    return
 
     x86_ast = AllocateRegisterOrStack(x86_ast)
     x86_formatter.include_live_afters = False

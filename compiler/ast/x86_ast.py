@@ -612,7 +612,7 @@ class X86InternalFormatter(object):
             builder.NewLine()
             builder.Append('# ')
             src_code_gen(var, builder)
-            builder.Append(' :: {}'.format(
+            builder.Append(', static_type: {}'.format(
                 StaticTypes.Str(GetNodeStaticType(var))))
 
         # instructions + live afters
@@ -639,7 +639,7 @@ class X86InternalFormatter(object):
                 if live_afters is not None and self.include_live_afters and i < len_live_afters:
                     la = live_afters[i]
                     la_str = ', '.join(la)
-                    builder.Append('( { %s } )' % la_str)
+                    builder.Append(' # live_after: ( { %s } )' % la_str)
         builder.NewLine()
         builder.Append(')')
 

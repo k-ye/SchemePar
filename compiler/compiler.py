@@ -779,14 +779,14 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
         instr_list.append(MakeX86InstrNode(x86c.PUSH, x86_rsi))
 
         instr_list.append(MakeX86InstrNode(
-            x86c.MOVE, MakeX86RegNode(x86c.R15), deepcopy(x86_rdi)))
+            x86c.MOVE, MakeX86RegNode(x86c.R15), x86_rdi))
         instr_list.append(MakeX86InstrNode(x86c.MOVE, MakeX86IntNode(
-            GetInternalCollectNodeBytes(node)), deepcopy(x86_rsi)))
+            GetInternalCollectNodeBytes(node)), x86_rsi))
         instr_list.append(MakeX86InstrNode(
             x86c.CALL, MakeX86LabelRefNode('collect')))
 
-        instr_list.append(MakeX86InstrNode(x86c.POP, deepcopy(x86_rsi)))
-        instr_list.append(MakeX86InstrNode(x86c.POP, deepcopy(x86_rdi)))
+        instr_list.append(MakeX86InstrNode(x86c.POP, x86_rsi))
+        instr_list.append(MakeX86InstrNode(x86c.POP, x86_rdi))
 
         return instr_list
 
@@ -932,14 +932,14 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
     def _SelectForAllocate(self, node, x86_asn_var):
         x86_free_ptr = MakeX86GlobalValueNode('free_ptr')
         instr_list = [MakeX86InstrNode(
-            x86c.MOVE, deepcopy(x86_free_ptr), x86_asn_var)]
+            x86c.MOVE, x86_free_ptr, x86_asn_var)]
 
         len = GetInternalAllocateNodeLen(node)
         instr_list.append(MakeX86InstrNode(x86c.ADD, MakeX86IntNode(
-            x86c.DWORD_SIZE * (len + 1)), deepcopy(x86_free_ptr)))
+            x86c.DWORD_SIZE * (len + 1)), x86_free_ptr))
 
         instr_list.append(MakeX86InstrNode(
-            x86c.MOVE, deepcopy(x86_asn_var), MakeX86RegNode(x86c.R11)))
+            x86c.MOVE, x86_asn_var, MakeX86RegNode(x86c.R11)))
 
         vec_tag = ComputeVectorTag(GetNodeStaticType(node))
         instr_list.append(MakeX86InstrNode(
