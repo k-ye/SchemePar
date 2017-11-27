@@ -313,7 +313,7 @@ class _LowLvPassBuilder(object):
     '''
 
     def __init__(self):
-        self._var_dict = {}
+        self._var_name_dict = {}
         # this is to order the variable list
         self._var_name_list = []
         self._stmt_list = []
@@ -323,7 +323,7 @@ class _LowLvPassBuilder(object):
 
     @property
     def var_list(self):
-        result = [self._var_dict[name] for name in self._var_name_list]
+        result = [self._var_name_dict[name] for name in self._var_name_list]
         return result
 
     @property
@@ -333,15 +333,15 @@ class _LowLvPassBuilder(object):
     def AddVar(self, var):
         assert not self.ContainsVar(var), var
         var_node = self._CreateVar(var)
-        self._var_dict[var] = var_node
+        self._var_name_dict[var] = var_node
         self._var_name_list.append(var)
         return var_node
 
     def GetVar(self, var):
-        return self._var_dict[var]
+        return self._var_name_dict[var]
 
     def ContainsVar(self, var):
-        return var in self._var_dict
+        return var in self._var_name_dict
 
     def AddStmt(self, stmt):
         self._stmt_list.append(stmt)
@@ -367,13 +367,13 @@ class _LowLvPassVarBuilder(object):
     '''
 
     def __init__(self):
-        self._var_dict = {}
+        self._var_name_dict = {}
         # this is to order the variable list
         self._var_name_list = []
 
     @property
     def var_list(self):
-        result = [self._var_dict[name] for name in self._var_name_list]
+        result = [self._var_name_dict[name] for name in self._var_name_list]
         return result
 
     def _CreateVar(self, var):
@@ -383,15 +383,15 @@ class _LowLvPassVarBuilder(object):
     def AddVar(self, var):
         assert not self.ContainsVar(var)
         var_node = self._CreateVar(var)
-        self._var_dict[var] = var_node
+        self._var_name_dict[var] = var_node
         self._var_name_list.append(var)
         return var_node
 
     def GetVar(self, var):
-        return self._var_dict[var]
+        return self._var_name_dict[var]
 
     def ContainsVar(self, var):
-        return var in self._var_dict
+        return var in self._var_name_dict
 
 
 class _SchToIrVarBuilder(_LowLvPassVarBuilder):
@@ -666,6 +666,12 @@ def Flatten(sch_ast):
 '''
 
 
+def _ConvertVarListToVarNameDict(var_list):
+    # helper to convert a list of var *nodes* to a dict
+    # that maps from var name (str) to var node
+    return {GetNodeVar(var): var for var in var_list}
+
+
 class _IrToX86VarBuilder(_LowLvPassVarBuilder):
 
     def __init__(self):
@@ -711,15 +717,16 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
         # epilogue, this should be added later for all function call
         instr_list.append(MakeX86CallCNode(X86_CALLC_EPILOGUE))
 
-        ir_var_map = {GetNodeVar(var): var for var in GetNodeVarList(node)}
-        assert len(self._builder.var_list) == len(ir_var_map)
+        ir_var_name_dict = _ConvertVarListToVarNameDict(GetNodeVarList(node))
+        assert len(self._builder.var_list) == len(ir_var_name_dict)
         x86_var_list = []
         for var_name in self._builder._var_name_list:
-            x86_var = self._builder._var_dict[var_name]
-            SetNodeStaticType(x86_var, GetNodeStaticType(ir_var_map[var_name]))
+            x86_var = self._builder._var_name_dict[var_name]
+            SetNodeStaticType(x86_var, GetNodeStaticType(
+                ir_var_name_dict[var_name]))
             x86_var_list.append(x86_var)
 
-        self._ast = MakeX86ProgramNode(-1, x86_var_list, instr_list)
+        self._ast = MakeX86ProgramNode(x86_var_list, instr_list)
         return instr_list
 
     def VisitAssign(self, node):
@@ -1088,7 +1095,7 @@ class _InferenceGraph(object):
         self._var_saturation[var_name].add(self.LocRepr(loc))
 
 
-def _ExtendInferenceGraphByInstrList(ig, instr_list, live_afters):
+def _ExtendInferenceGraphByInstrList(ig, var_name_dict, instr_list, live_afters):
     # precondition: all the variables should be added to |ig|
     assert len(instr_list) == len(live_afters)
     for i, instr in enumerate(instr_list):
@@ -1101,42 +1108,61 @@ def _ExtendInferenceGraphByInstrList(ig, instr_list, live_afters):
         elif IsX86TmpIfNode(instr):
             then_instr_list = GetX86TmpIfThen(instr)
             then_la_list = GetX86TmpIfThenLiveAfter(instr)
-            _ExtendInferenceGraphByInstrList(ig, then_instr_list, then_la_list)
+            _ExtendInferenceGraphByInstrList(
+                ig, var_name_dict, then_instr_list, then_la_list)
             else_instr_list = GetX86TmpIfElse(instr)
             else_la_list = GetX86TmpIfElseLiveAfter(instr)
-            _ExtendInferenceGraphByInstrList(ig, else_instr_list, else_la_list)
+            _ExtendInferenceGraphByInstrList(
+                ig, var_name_dict, else_instr_list, else_la_list)
         else:
             method = GetX86Instr(instr)
             if method in {x86c.MOVE, x86c.MOVEZB}:
                 src, dst = GetX86InstrOperandList(instr)
-                dst_name = GetNodeVar(dst)
-                not_interfered = {dst_name}
-                if IsX86VarNode(src):
-                    not_interfered.add(GetNodeVar(src))
-                for v_name in la_i:
-                    if v_name not in not_interfered:
-                        ig.AddInterference(dst_name, v_name)
+
+                if IsX86VarNode(dst):
+                    dst_name = GetNodeVar(dst)
+                    not_interfered = {dst_name}
+                    if IsX86VarNode(src):
+                        not_interfered.add(GetNodeVar(src))
+                    for v_name in la_i:
+                        if v_name not in not_interfered:
+                            ig.AddInterference(dst_name, v_name)
+                elif IsX86VarNode(src):
+                    src_name = GetNodeVar(src)
+                    ig.AddSaturation(src_name, dst)
+
             elif method in {x86c.ADD, x86c.SUB, x86c.NEG, x86c.XOR}:
                 dst = GetX86InstrOperandList(instr)[-1]
-                dst_name = GetNodeVar(dst)
-                for v_name in la_i:
-                    if v_name != dst_name:
-                        ig.AddInterference(dst_name, v_name)
+                if IsX86VarNode(dst):
+                    dst_name = GetNodeVar(dst)
+                    for v_name in la_i:
+                        if v_name != dst_name:
+                            ig.AddInterference(dst_name, v_name)
+                elif not IsX86GlobalValueNode(dst):
+                    # |dst| could be global-val in implementing `allocate`
+                    raise CompilingError('Unexpected dst!')
             elif method == x86c.CALL:
                 for v_name in la_i:
                     for cs_reg in x86c.CallerSaveRegs():
                         cs_reg = MakeX86RegNode(cs_reg)
                         ig.AddSaturation(v_name, cs_reg)
+                    # TODO: do this only if the invoked method is 'collect'.
+                    static_type = GetNodeStaticType(var_name_dict[v_name])
+                    if IsValidStaticTypeVector(static_type):
+                        for cs_reg in x86c.CalleeSaveRegs():  # x86c.FreeRegs()
+                            cs_reg = MakeX86RegNode(cs_reg)
+                            ig.AddSaturation(v_name, cs_reg)
 
 
 def _BuildInterferenceGraph(x86_ast):
     ig = _InferenceGraph()
-    for var in GetNodeVarList(x86_ast):
+    var_name_dict = _ConvertVarListToVarNameDict(GetNodeVarList(x86_ast))
+    for var in var_name_dict.values():
         ig.AddVar(var)
 
     instr_list = GetX86ProgramInstrList(x86_ast)
     live_afters, _ = _UncoverLive(instr_list)
-    _ExtendInferenceGraphByInstrList(ig, instr_list, live_afters)
+    _ExtendInferenceGraphByInstrList(ig, var_name_dict, instr_list, live_afters)
     return ig
 
 
@@ -1166,24 +1192,26 @@ def _BuildMoveRelatedGraph(x86_ast):
     instr_list = GetX86ProgramInstrList(x86_ast)
     for instr in instr_list:
         if TypeOf(instr) == X86_INSTR_NODE_T and \
-                GetX86Instr(instr) == x86c.MOVE:
+                GetX86Instr(instr) in {x86c.MOVE, x86c.MOVEZB}:
             src, dst = GetX86InstrOperandList(instr)
-            assert IsX86VarNode(dst)
+            # |dst| is no longer guaranteed to be a Var. In collect, it could
+            # be |rdi| or |rsi|. In vector-ref|set it could be register deref.
+            # assert IsX86VarNode(dst)
             # it could be that |src| is an X86IntNode
-            if IsX86VarNode(src):
+            if IsX86VarNode(src) and IsX86VarNode(dst):
                 src_name, dst_name = GetNodeVar(src), GetNodeVar(dst)
                 mrg.AddMoveRelated(src_name, dst_name)
     return mrg
 
 
-def _AllocateRegisterOrStack(ig, mrg, use_mr):
+def _AllocateRegisterOrStack(ig, mrg, var_name_dict, use_mr):
     # a set the names of the variables not assigned a loc
     unassigned_var_names = set(ig._var_to_node.keys())
     # a mapping from var name to loc X86 node
     var_assigned_loc = {}
 
     free_regs = {r for r in x86c.FreeRegs()}
-    stack_pos = 0
+    stack_pos, rootstack_pos = 0, 0
 
     def TopUnassignedVar():
         curmax, chosen = -1, None
@@ -1198,10 +1226,13 @@ def _AllocateRegisterOrStack(ig, mrg, use_mr):
         for mr in move_related:
             if mr in var_assigned_loc:
                 maybe_loc = var_assigned_loc[mr]
-                if IsX86RegNode(maybe_loc) and \
-                        ig.LocRepr(maybe_loc) not in uv_sat:
+                if IsX86RegNode(maybe_loc) and ig.LocRepr(maybe_loc) not in uv_sat:
                     return maybe_loc
         return None
+
+    def IsVarVector(var_name):
+        var = var_name_dict[var_name]
+        return IsValidStaticTypeVector(GetNodeStaticType(var))
 
     while len(unassigned_var_names):
         uv = TopUnassignedVar()
@@ -1215,6 +1246,9 @@ def _AllocateRegisterOrStack(ig, mrg, use_mr):
                 # select a register
                 reg_name = selectable_regs[0]
                 loc = MakeX86RegNode(reg_name)
+            elif IsVarVector(uv):
+                loc = MakeX86DerefNode(x86c.R15, rootstack_pos)
+                rootstack_pos += x86c.DWORD_SIZE
             else:
                 # select a stack position
                 stack_pos -= x86c.DWORD_SIZE
@@ -1224,7 +1258,7 @@ def _AllocateRegisterOrStack(ig, mrg, use_mr):
             ig.AddSaturation(iv, loc)
         unassigned_var_names.remove(uv)
     stack_sz = -stack_pos  # be verbose about what is returned.
-    return var_assigned_loc, stack_sz
+    return var_assigned_loc, stack_sz, rootstack_pos
 
 
 def _ReplaceX86SiRets(x86_ast):
@@ -1319,11 +1353,13 @@ def AllocateRegisterOrStack(x86_ast, use_mr=True, rm_same_mov=True):
 
     ig = _BuildInterferenceGraph(x86_ast)
     mrg = _BuildMoveRelatedGraph(x86_ast)
+    var_name_dict = _ConvertVarListToVarNameDict(GetNodeVarList(x86_ast))
     # mrg = None
     x86_ast = _ReplaceX86SiRets(x86_ast)
 
-    var_assigned_loc_map, stack_sz = _AllocateRegisterOrStack(ig, mrg, use_mr)
-    assert len(var_assigned_loc_map) == len(GetNodeVarList(x86_ast))
+    var_assigned_loc_map, stack_sz, rootstack_sz = _AllocateRegisterOrStack(
+        ig, mrg, var_name_dict, use_mr)
+    assert len(var_assigned_loc_map) == len(var_name_dict)
 
     instr_list = GetX86ProgramInstrList(x86_ast)
     instr_list = _AssignAllocatedLocByInstrList(
@@ -1335,6 +1371,8 @@ def AllocateRegisterOrStack(x86_ast, use_mr=True, rm_same_mov=True):
     SetX86ProgramInstrList(x86_ast, instr_list)
     # the stack size is computed at this time
     SetX86ProgramStackSize(x86_ast, stack_sz)
+    SetX86ProgramRootstackSize(x86_ast, rootstack_sz)
+
     return x86_ast
 
 

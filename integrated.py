@@ -91,12 +91,12 @@ def main():
     PrintSourceCode('X86 (Uncover Live)',
                     X86SourceCode(x86_ast, x86_formatter))
 
-    return
-
     x86_ast = AllocateRegisterOrStack(x86_ast)
     x86_formatter.include_live_afters = False
     PrintSourceCode('X86 (Allocate Register or Stack)',
                     X86SourceCode(x86_ast, x86_formatter))
+
+    return
 
     x86_ast = LowerTmpIf(x86_ast)
     PrintSourceCode('X86 (Lower TmpIf)',

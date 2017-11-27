@@ -27,6 +27,7 @@ _X86_SI_RET_P_ARG = 'ret_arg'
 
 _X86_P_FORMATTER = 'formatter'
 _X86_PROGRAM_P_STACK_SZ = 'stack_sz'
+_X86_PROGRAM_P_ROOTSTACK_SZ = 'rootstack_sz'
 _X86_PROGRAM_P_INSTR_LIST = 'instr_list'
 _X86_PROGRAM_P_LIVE = 'live_afters'
 _X86_INSTR_P_INSTR = 'instr'
@@ -51,10 +52,11 @@ def IsX86Node(node):
     return LangOf(node) == X86_LANG
 
 
-def MakeX86ProgramNode(stack_sz, var_list, instr_list):
+def MakeX86ProgramNode(var_list, instr_list):
     node = _MakeX86Node(PROGRAM_NODE_T, _NODE_TC)
-    stack_sz = stack_sz if stack_sz < 0 else RoundupStackSize(stack_sz)
-    SetProperty(node, _X86_PROGRAM_P_STACK_SZ, stack_sz)
+    # stack_sz = stack_sz if stack_sz < 0 else RoundupStackSize(stack_sz)
+    SetProperty(node, _X86_PROGRAM_P_STACK_SZ, -1)
+    SetProperty(node, _X86_PROGRAM_P_ROOTSTACK_SZ, -1)
     SetProperty(node, P_VAR_LIST, var_list)
     SetProperty(node, _X86_PROGRAM_P_INSTR_LIST, instr_list)
     SetProperty(node, _X86_PROGRAM_P_LIVE, [])
@@ -65,19 +67,30 @@ def IsX86ProgramNode(node):
     return IsX86Node(node) and TypeOf(node) == PROGRAM_NODE_T
 
 
+def _RoundupStackSize(stack_sz):
+    return ((stack_sz + 15) / 16) * 16
+
+
 def GetX86ProgramStackSize(node):
     assert IsX86ProgramNode(node)
     return GetProperty(node, _X86_PROGRAM_P_STACK_SZ)
 
 
-def RoundupStackSize(stack_sz):
-    return ((stack_sz + 15) / 16) * 16
-
-
 def SetX86ProgramStackSize(node, stack_sz):
     assert IsX86ProgramNode(node)
-    stack_sz = RoundupStackSize(stack_sz)
+    stack_sz = _RoundupStackSize(stack_sz)
     SetProperty(node, _X86_PROGRAM_P_STACK_SZ, stack_sz)
+
+
+def GetX86ProgramRootstackSize(node):
+    assert IsX86ProgramNode(node)
+    return GetProperty(node, _X86_PROGRAM_P_ROOTSTACK_SZ)
+
+
+def SetX86ProgramRootstackSize(node, rootstack_sz):
+    assert IsX86ProgramNode(node)
+    rootstack_sz = _RoundupStackSize(rootstack_sz)
+    SetProperty(node, _X86_PROGRAM_P_ROOTSTACK_SZ, rootstack_sz)
 
 
 def GetX86ProgramInstrList(node):

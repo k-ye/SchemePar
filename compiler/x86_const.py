@@ -51,7 +51,12 @@ RBP = 'rbp'
 
 def CallerSaveRegs():
     # rax rdx rcx rsi rdi r8 r9 r10 r11
-    for r in [RAX, RDX, RCX, RSI, RDI, R8, R9, R10, R11]:
+    for r in [RAX, RCX, RDX, RSI, RDI, R8, R9, R10, R11]:
+        yield r
+
+
+def CalleeSaveRegs():
+    for r in [RBX, RBP, RSP, R12, R13, R14, R15]:
         yield r
 
 
