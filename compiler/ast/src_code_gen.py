@@ -52,6 +52,10 @@ class AstSourceCodeBuilder(object):
         assert self._lines[-1] == self._MakeIndent()
         self._lines[-1] = ''
 
+    @property
+    def cur_line_length(self):
+        return len(self._lines[-1])
+
 
 class DefaultProgramFormatter(object):
 

@@ -21,26 +21,31 @@ def main():
     # (if (not #t) (read_bool) #t)
     # '''
     # test_data = '(let ([x 42]) (let ([y x]) y))'
-    test_data = '''
-    ; a test Scheme program using R1 grammar
 
-    (let
-        (
-            [foo 1] [bar 2] [x 3] [y 4]
-        )
-        (if
-            (< (- foo) x)
-            (let
-                (
-                    [foo (vector foo bar x y)]
-                    [bar 40]
-                )
-                (+ (vector-ref foo 2) bar )
-            )
-            233
-        )
-    )
-    ; 42
+    # test_data = '''
+    # ; a test Scheme program using R1 grammar
+
+    # (let
+    #     (
+    #         [foo 1] [bar 2] [x 3] [y 4]
+    #     )
+    #     (if
+    #         (< (- foo) x)
+    #         (let
+    #             (
+    #                 [foo (vector foo bar x y)]
+    #                 [bar 40]
+    #             )
+    #             (+ (vector-ref foo 2) bar )
+    #         )
+    #         233
+    #     )
+    # )
+    # ; 42
+    # '''
+
+    test_data = '''
+    (vector-ref (vector-ref (vector (vector 42)) 0) 0)
     '''
     input_filename = None
     if len(sys.argv) > 1:

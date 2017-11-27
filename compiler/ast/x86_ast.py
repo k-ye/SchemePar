@@ -609,12 +609,18 @@ class X86InternalFormatter(object):
         builder.Append('# variables')
         var_list = GetNodeVarList(node)
         for var in var_list:
+            builder.NewLine()
+            builder.Append('# ')
             src_code_gen(var, builder)
+            builder.Append(' :: {}'.format(
+                StaticTypes.Str(GetNodeStaticType(var))))
+
         # instructions + live afters
         builder.NewLine()
         builder.NewLine()
 
         builder.Append('# instructions')
+        builder.NewLine()
         instr_list = GetX86ProgramInstrList(node)
         live_afters = GetX86ProgramLiveAfters(node)
         self.FormatInstrList(instr_list, live_afters, builder, src_code_gen)

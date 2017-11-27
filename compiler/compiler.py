@@ -711,8 +711,15 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
         # epilogue, this should be added later for all function call
         instr_list.append(MakeX86CallCNode(X86_CALLC_EPILOGUE))
 
-        assert len(self._builder.var_list) == len(GetNodeVarList(node))
-        self._ast = MakeX86ProgramNode(-1, self._builder.var_list, instr_list)
+        ir_var_map = {GetNodeVar(var): var for var in GetNodeVarList(node)}
+        assert len(self._builder.var_list) == len(ir_var_map)
+        x86_var_list = []
+        for var_name in self._builder._var_name_list:
+            x86_var = self._builder._var_dict[var_name]
+            SetNodeStaticType(x86_var, GetNodeStaticType(ir_var_map[var_name]))
+            x86_var_list.append(x86_var)
+
+        self._ast = MakeX86ProgramNode(-1, x86_var_list, instr_list)
         return instr_list
 
     def VisitAssign(self, node):
@@ -867,13 +874,13 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
         ndtype = TypeOf(node)
         if ndtype == INT_NODE_T:
             return MakeX86IntNode(GetIntX(node))
+        elif ndtype == VOID_NODE_T:
+            return MakeX86IntNode(0)
         elif ndtype == BOOL_NODE_T:
             bool_to_int = 1 if GetNodeBool(node) == '#t' else 0
             return MakeX86IntNode(bool_to_int)
         elif ndtype == VAR_NODE_T:
             return self._builder.GetVar(GetNodeVar(node))
-        elif ndtype == VOID_NODE_T:
-            return MakeX86IntNode(0)
         raise RuntimeError('type={}'.format(ndtype))
 
     def VisitVectorRef(self, node):
