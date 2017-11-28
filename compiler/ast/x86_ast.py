@@ -690,6 +690,9 @@ class MacX86Formatter(object):
             argstr = self._Reg(var)
         elif t == X86_BYTE_REG_NODE_T:
             argstr = self._Reg(self._Reg64BitToLow8Bit(var))
+        elif t == INTERNAL_GLOBAL_VALUE_NODE_T:
+            argstr = '{1}({0})'.format(self._Reg('rip'), self._LabelRef(var))
+            # builder.Append('( global_value "{}" )'.format(arg))
         elif t == X86_LABEL_REF_NODE_T:
             argstr = self._LabelRef(var)
         else:

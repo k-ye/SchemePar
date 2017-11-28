@@ -945,9 +945,9 @@ class _SelectInstructionVisitor(IrAstVisitorBase):
         instr_list.append(MakeX86InstrNode(x86c.ADD, MakeX86IntNode(
             x86c.DWORD_SIZE * (len + 1)), x86_free_ptr))
 
+        # store tag
         instr_list.append(MakeX86InstrNode(
             x86c.MOVE, x86_asn_var, MakeX86RegNode(x86c.R11)))
-
         vec_tag = ComputeVectorTag(GetNodeStaticType(node))
         instr_list.append(MakeX86InstrNode(
             x86c.MOVE, MakeX86IntNode(vec_tag), MakeX86DerefNode(x86c.R11, 0)))
@@ -1247,8 +1247,8 @@ def _AllocateRegisterOrStack(ig, mrg, var_name_dict, use_mr):
                 reg_name = selectable_regs[0]
                 loc = MakeX86RegNode(reg_name)
             elif IsVarVector(uv):
+                rootstack_pos -= x86c.DWORD_SIZE
                 loc = MakeX86DerefNode(x86c.R15, rootstack_pos)
-                rootstack_pos += x86c.DWORD_SIZE
             else:
                 # select a stack position
                 stack_pos -= x86c.DWORD_SIZE
@@ -1257,8 +1257,8 @@ def _AllocateRegisterOrStack(ig, mrg, var_name_dict, use_mr):
         for iv in interfered:
             ig.AddSaturation(iv, loc)
         unassigned_var_names.remove(uv)
-    stack_sz = -stack_pos  # be verbose about what is returned.
-    return var_assigned_loc, stack_sz, rootstack_pos
+    stack_sz, rootstack_sz = -stack_pos, -rootstack_pos
+    return var_assigned_loc, stack_sz, rootstack_sz
 
 
 def _ReplaceX86SiRets(x86_ast):
@@ -1440,6 +1440,8 @@ def PatchInstruction(x86_ast):
     assert LangOf(x86_ast) == X86_LANG and TypeOf(x86_ast) == PROGRAM_NODE_T
     instr_list = GetX86ProgramInstrList(x86_ast)
     stack_sz = GetX86ProgramStackSize(x86_ast)
+    rootstack_sz = GetX86ProgramRootstackSize(x86_ast)
+    heap_sz = 16384  # 16 MB
     # a instruction might be splitted into two, hence we need a new list.
     new_instr_list = []
     for instr in instr_list:
@@ -1459,9 +1461,37 @@ def PatchInstruction(x86_ast):
                     instr = MakeX86InstrNode(x86c.SUB, MakeX86IntNode(
                         stack_sz), MakeX86RegNode(x86c.RSP))
                     new_instr_list.append(instr)
+                # the following instructions is only for `main`
+
+                # movq    $16,    %rdi  # rootstack size
+                # movq    $16384, %rsi  # heap size
+                # callq   _initialize
+                instr = MakeX86InstrNode(x86c.MOVE, MakeX86IntNode(
+                    rootstack_sz), MakeX86RegNode(x86c.RDI))
+                new_instr_list.append(instr)
+                instr = MakeX86InstrNode(x86c.MOVE, MakeX86IntNode(
+                    heap_sz), MakeX86RegNode(x86c.RSI))
+                new_instr_list.append(instr)
+                instr = MakeX86InstrNode(
+                    x86c.CALL, MakeX86LabelRefNode('initialize'))
+                new_instr_list.append(instr)
+                # movq    _rootstack_begin(%rip), %r15
+                # addq    $8, %r15
+                instr = MakeX86InstrNode(x86c.MOVE, MakeX86GlobalValueNode(
+                    'rootstack_begin'), MakeX86RegNode(x86c.R15))
+                new_instr_list.append(instr)
+                # Rootstack and heap memory are cleared to 0 inside `initialize`,
+                # therefore we don't need to do it here.
+                instr = MakeX86InstrNode(x86c.ADD, MakeX86IntNode(
+                    rootstack_sz), MakeX86RegNode(x86c.R15))
+                new_instr_list.append(instr)
                 has_appended = True
             else:
                 assert logue == X86_CALLC_EPILOGUE
+                # subq    $8,  %r15
+                instr = MakeX86InstrNode(x86c.SUB, MakeX86IntNode(
+                    rootstack_sz), MakeX86RegNode(x86c.R15))
+                new_instr_list.append(instr)
                 # addq    $16, %rsp
                 # popq    %rbp
                 # retq
@@ -1495,9 +1525,8 @@ def PatchInstruction(x86_ast):
                 has_appended = True
                 instr = new_instr  # this is only needed for the check below
             dst_type = TypeOf(GetX86InstrOperandList(instr)[1])
-            assert dst_type in {X86_REG_NODE_T, X86_DEREF_NODE_T,
-                                X86_BYTE_REG_NODE_T}, \
-                'dst type={} for instr={}'.format(dst_type, method)
+            assert dst_type in {X86_REG_NODE_T, X86_DEREF_NODE_T, X86_BYTE_REG_NODE_T,
+                                INTERNAL_GLOBAL_VALUE_NODE_T}, 'dst type={} for instr={}'.format(dst_type, method)
         if not has_appended:
             new_instr_list.append(instr)
     SetX86ProgramInstrList(x86_ast, new_instr_list)
@@ -1518,6 +1547,7 @@ Calls all the passes on the Scheme AST.
 
 
 def Compile(sch_ast):
+    sch_ast = ExposeAllocation(sch_ast)
     sch_ast = Uniquify(sch_ast)
     ir_ast = Flatten(sch_ast)
     x86_ast = SelectInstruction(ir_ast)
